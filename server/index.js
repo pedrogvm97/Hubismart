@@ -32,10 +32,16 @@ const io = new Server(server, {
     }
 });
 
-app.use(helmet());
+app.use(helmet({
+    contentSecurityPolicy: false, // Disable for development/local ease, can be tightened later
+}));
 app.use(morgan('dev'));
 app.use(cors());
 app.use(express.json());
+
+// Serve static frontend in production
+const path = require('path');
+app.use(express.static(path.join(__dirname, 'public')));
 
 // Basic health check
 app.get('/health', (req, res) => {
