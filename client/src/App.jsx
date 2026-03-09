@@ -6,16 +6,10 @@ import {
 } from 'recharts';
 
 const App = () => {
-  const [devices, setDevices] = useState([]);
-  const [activeTab, setActiveTab] = useState('home');
-  const [monitoringData, setMonitoringData] = useState([
-    { name: '12:00', power: 45 },
-    { name: '13:00', power: 52 },
-    { name: '14:00', power: 38 },
-    { name: '15:00', power: 65 },
-    { name: '16:00', power: 48 },
-    { name: '17:00', power: 55 },
-  ]);
+  const [activeTab, setActiveTab] = useState('settings');
+  const [hubConfig, setHubConfig] = useState({ ip: '192.168.1.65', appId: '119', token: 'b22b356d-9474-43b6-adc7-6271fc1c9997' });
+  const [isEditingConfig, setIsEditingConfig] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState('idle'); // idle, checking, success, error
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -30,10 +24,10 @@ const App = () => {
 
         <nav className="flex flex-col gap-2 w-full">
           {[
-            { id: 'home', icon: LayoutGrid, label: 'Home' },
-            { id: 'devices', icon: Home, label: 'Devices' },
-            { id: 'automations', icon: Zap, label: 'Automations' },
-            { id: 'monitoring', icon: Activity, label: 'Monitoring' },
+            { id: 'dashboard', icon: LayoutGrid, label: 'Dashboard' },
+            { id: 'home', icon: Home, label: 'Home' },
+            { id: 'automation', icon: Zap, label: 'Automation' },
+            { id: 'devices', icon: Activity, label: 'Devices' },
             { id: 'settings', icon: Settings, label: 'Settings' }
           ].map((item) => (
             <button
