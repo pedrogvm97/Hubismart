@@ -7,11 +7,18 @@ const morgan = require('morgan');
 require('dotenv').config();
 
 const HubitatClient = require('./hubitatClient');
+const setupDatabase = require('./database');
 
 const app = express();
 const server = http.createServer(app);
+let db;
 
-// Hubitat Client Initialization
+// Database and Hubitat Client Initialization
+(async () => {
+    db = await setupDatabase();
+    console.log('Database initialized');
+})();
+
 const hubitat = new HubitatClient({
     ip: process.env.HUBITAT_IP,
     appId: process.env.HUBITAT_APP_ID,
@@ -72,7 +79,7 @@ app.post('/events', (req, res) => {
     res.status(200).send('Event received');
 });
 
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 3020;
 server.listen(PORT, () => {
     console.log(`Hubismart server running on port ${PORT}`);
 });
