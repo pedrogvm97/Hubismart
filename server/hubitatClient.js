@@ -42,6 +42,22 @@ class HubitatClient {
             throw error;
         }
     }
+
+    static async validateConnection(config) {
+        const testUrl = `http://${config.ip}/apps/api/${config.appId}/devices`;
+        try {
+            await axios.get(testUrl, {
+                params: { access_token: config.token },
+                timeout: 5000
+            });
+            return { success: true };
+        } catch (error) {
+            return {
+                success: false,
+                error: error.response?.status === 401 ? 'Invalid Access Token' : error.message
+            };
+        }
+    }
 }
 
 module.exports = HubitatClient;
