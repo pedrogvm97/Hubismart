@@ -1,9 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { Home, Zap, Settings, Activity, LayoutGrid, Bell } from 'lucide-react';
 
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+} from 'recharts';
+
 const App = () => {
   const [devices, setDevices] = useState([]);
   const [activeTab, setActiveTab] = useState('home');
+  const [monitoringData, setMonitoringData] = useState([
+    { name: '12:00', power: 45 },
+    { name: '13:00', power: 52 },
+    { name: '14:00', power: 38 },
+    { name: '15:00', power: 65 },
+    { name: '16:00', power: 48 },
+    { name: '17:00', power: 55 },
+  ]);
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -21,6 +33,7 @@ const App = () => {
             { id: 'home', icon: LayoutGrid, label: 'Home' },
             { id: 'devices', icon: Home, label: 'Devices' },
             { id: 'automations', icon: Zap, label: 'Automations' },
+            { id: 'monitoring', icon: Activity, label: 'Monitoring' },
             { id: 'settings', icon: Settings, label: 'Settings' }
           ].map((item) => (
             <button
@@ -163,31 +176,137 @@ const App = () => {
           </div>
         )}
 
-        {activeTab === 'settings' && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-            <div className="glass-card p-8">
-              <h3 className="text-xl font-bold text-white mb-6">Hub Configuration</h3>
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-slate-500 text-sm font-medium mb-2">Hubitat IP Address</label>
-                  <input type="text" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors" defaultValue="192.168.1.128:65" />
-                </div>
-                <div>
-                  <label className="block text-slate-500 text-sm font-medium mb-2">Maker API App ID</label>
-                  <input type="text" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors" placeholder="123" />
-                </div>
-                <div>
-                  <label className="block text-slate-500 text-sm font-medium mb-2">Access Token</label>
-                  <input type="password" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors" placeholder="••••••••" />
-                </div>
-                <button className="w-full py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 transition-all active:scale-[0.98] mt-4">Save Configuration</button>
+        {activeTab === 'monitoring' && (
+          <div className="flex flex-col gap-8">
+            <div className="flex justify-between items-center text-white">
+              <div>
+                <h3 className="text-xl font-bold mb-1">Advanced Monitoring</h3>
+                <p className="text-slate-400">Total power consumption and history across all floors.</p>
+              </div>
+              <div className="flex gap-2">
+                {['1h', '6h', '24h', '7d', '30d'].map(time => (
+                  <button key={time} className="px-4 py-2 glass-card hover:bg-white/10 text-sm font-medium transition-colors">
+                    {time}
+                  </button>
+                ))}
               </div>
             </div>
 
-            <div className="glass-card p-8 bg-indigo-600/5">
-              <h3 className="text-xl font-bold text-white mb-4">Floor Plan (Beta)</h3>
-              <p className="text-slate-400 mb-6">Design your home sketch here. You can add multiple floors and place devices directly on the map.</p>
-              <button className="premium-button w-full">Launch Sketcher</button>
+            <div className="glass-card p-8 min-h-[400px] relative overflow-hidden">
+              <div className="flex justify-between items-center mb-8">
+                <h4 className="text-white font-bold text-lg">Real-time Energy Flux</h4>
+                <div className="flex items-center gap-2 text-indigo-400 text-sm">
+                  <div className="w-2 h-2 bg-indigo-500 rounded-full animate-pulse"></div>
+                  Streaming Live
+                </div>
+              </div>
+              <div className="h-[300px] w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={monitoringData}>
+                    <defs>
+                      <linearGradient id="colorPower" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
+                        <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#ffffff10" vertical={false} />
+                    <XAxis
+                      dataKey="name"
+                      stroke="#94a3b8"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                    />
+                    <YAxis
+                      stroke="#94a3b8"
+                      fontSize={12}
+                      tickLine={false}
+                      axisLine={false}
+                      tickFormatter={(v) => `${v}W`}
+                    />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: '#1e293b',
+                        border: 'none',
+                        borderRadius: '12px',
+                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)'
+                      }}
+                      itemStyle={{ color: '#fff' }}
+                    />
+                    <Area
+                      type="monotone"
+                      dataKey="power"
+                      stroke="#6366f1"
+                      strokeWidth={3}
+                      fillOpacity={1}
+                      fill="url(#colorPower)"
+                    />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              {[
+                { label: 'Peak Usage', value: '450W', time: '2:15 PM' },
+                { label: 'Avg Daily', value: '12.4kWh', status: '+2% from yesterday' },
+                { label: 'Most Active', value: 'Kitchen', sub: 'Oven / Dishwasher' }
+              ].map((card, i) => (
+                <div key={i} className="glass-card p-6">
+                  <p className="text-slate-500 text-sm font-bold uppercase tracking-widest mb-2">{card.label}</p>
+                  <p className="text-2xl font-bold text-white mb-1">{card.value}</p>
+                  <p className="text-xs text-indigo-400 font-medium">{card.time || card.status || card.sub}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'settings' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="glass-card p-8">
+              <h3 className="text-xl font-bold text-white mb-6">Hub Connection</h3>
+              <div className="space-y-6">
+                <div className="p-4 bg-indigo-500/5 rounded-xl border border-indigo-500/10 mb-4">
+                  <p className="text-slate-400 text-sm leading-relaxed">
+                    Simply paste your **Maker API Access Token** below.
+                    <br /><span className="text-xs opacity-60">You can also paste the full "Local URL" from Hubitat to auto-detect settings.</span>
+                  </p>
+                </div>
+                <div>
+                  <label className="block text-slate-500 text-sm font-medium mb-2">Maker API Token / API Key</label>
+                  <input type="text" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-4 text-white font-mono text-sm focus:outline-none focus:border-indigo-500 transition-colors shadow-inner" defaultValue="b22b356d-9474-43b6-adc7-6271fc1c9997" />
+                </div>
+                <button className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-lg shadow-indigo-600/25 transition-all active:scale-[0.98]">
+                  Connect Hubitat
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-8">
+              <div className="glass-card p-8 bg-indigo-600/5">
+                <h3 className="text-xl font-bold text-white mb-4">Floor Plan (Beta)</h3>
+                <p className="text-slate-400 mb-6 font-light">Design your home map with multiple floors. Place your devices on the sketch to control them visually.</p>
+                <button className="premium-button w-full border border-white/5 shadow-xl">
+                  Open Floor Plan Editor
+                </button>
+              </div>
+              <div className="glass-card p-8 bg-slate-800/20">
+                <h3 className="text-xl font-bold text-white mb-4">Device Sync</h3>
+                <p className="text-slate-400 mb-4 text-sm">Synchronize paired devices from Hubitat into Hubismart groups.</p>
+                <div className="flex gap-4">
+                  <button className="flex-1 py-3 px-4 glass-card hover:bg-white/10 text-white text-sm font-bold transition-all">Full Resync</button>
+                </div>
+              </div>
+
+              <div className="glass-card p-8 border-dashed border-2 border-white/5">
+                <h3 className="text-xl font-bold text-white mb-4">Backup & Restore</h3>
+                <p className="text-slate-400 mb-6 text-sm">Export your configuration (API keys, groups, layout) to a file. Protect it with a password for security.</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <button className="py-3 px-4 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-400 text-sm font-bold rounded-xl border border-emerald-500/20 transition-all">Export Config</button>
+                  <button className="py-3 px-4 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-400 text-sm font-bold rounded-xl border border-indigo-500/20 transition-all">Import Config</button>
+                </div>
+              </div>
             </div>
           </div>
         )}
