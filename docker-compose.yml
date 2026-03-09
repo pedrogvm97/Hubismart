@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  hubismart:
+    image: hubismart:latest
+    container_name: Hubismart
+    network_mode: bridge
+    ports:
+      - "3020:3020"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - HUBITAT_IP=192.168.1.128:65
+      - HUBITAT_APP_ID=YOUR_APP_ID
+      - HUBITAT_ACCESS_TOKEN=YOUR_ACCESS_TOKEN
+    restart: unless-stopped
