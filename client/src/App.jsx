@@ -3,7 +3,7 @@ import { Home, Zap, Settings, Activity, LayoutGrid, Bell } from 'lucide-react';
 
 const App = () => {
   const [devices, setDevices] = useState([]);
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState('home');
 
   return (
     <div className="flex h-screen overflow-hidden">
@@ -18,18 +18,17 @@ const App = () => {
 
         <nav className="flex flex-col gap-2 w-full">
           {[
-            { id: 'dashboard', icon: LayoutGrid, label: 'Dashboard' },
+            { id: 'home', icon: LayoutGrid, label: 'Home' },
             { id: 'devices', icon: Home, label: 'Devices' },
             { id: 'automations', icon: Zap, label: 'Automations' },
-            { id: 'history', icon: Activity, label: 'Activity' },
             { id: 'settings', icon: Settings, label: 'Settings' }
           ].map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
               className={`flex items-center gap-4 p-3 rounded-xl transition-all duration-200 group ${activeTab === item.id
-                  ? 'bg-white/10 text-white shadow-inner shadow-white/5'
-                  : 'text-slate-400 hover:text-white hover:bg-white/5'
+                ? 'bg-white/10 text-white shadow-inner shadow-white/5'
+                : 'text-slate-400 hover:text-white hover:bg-white/5'
                 }`}
             >
               <item.icon size={22} className={activeTab === item.id ? 'text-indigo-400' : 'group-hover:text-indigo-400'} />
@@ -55,7 +54,7 @@ const App = () => {
           </div>
         </header>
 
-        {activeTab === 'dashboard' && (
+        {activeTab === 'home' && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {/* Stats Cards */}
             {[
