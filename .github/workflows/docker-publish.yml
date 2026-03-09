@@ -27,11 +27,19 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Lowercase image name
+        run: |
+          echo "IMAGE_NAME_LOWERCASE=${IMAGE_NAME,,}" >>${GITHUB_ENV}
+
       - name: Extract metadata (tags, labels) for Docker
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWERCASE }}
+          tags: |
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+            type=raw,value=main,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+            type=sha
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
