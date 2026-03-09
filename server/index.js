@@ -71,10 +71,73 @@ app.post('/api/devices/:id/command', async (req, res) => {
     }
 });
 
+// Group Routes
+app.get('/api/groups', async (req, res) => {
+    try {
+        const groups = await db.all('SELECT * FROM groups');
+        const deviceGroups = await db.all('SELECT * FROM device_groups');
+        res.json({ groups, deviceGroups });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch groups' });
+    }
+});
+
+app.post('/api/groups', async (req, res) => {
+    const { name, type, description } = req.body;
+    try {
+        const result = await db.run(
+            'INSERT INTO groups (name, type, description) VALUES (?, ?, ?)',
+            [name, type, description]
+        );
+        res.json({ id: result.lastID });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to create group' });
+    }
+});
+
+app.post('/api/groups/:id/devices', async (req, res) => {
+    const { deviceId } = req.body;
+    try {
+        await db.run(
+            'INSERT OR REPLACE INTO device_groups (device_id, group_id) VALUES (?, ?)',
+            [deviceId, req.params.id]
+        );
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to add device to group' });
+    }
+});
+
+// Monitoring Routes
+app.get('/api/monitoring/:deviceId', async (req, res) => {
+    try {
+        const history = await db.all(
+            'SELECT * FROM device_history WHERE device_id = ? ORDER BY timestamp DESC LIMIT 100',
+            [req.params.deviceId]
+        );
+        res.json(history);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch monitoring data' });
+    }
+});
+
 // Maker API Event Receiver (Webhook)
-app.post('/events', (req, res) => {
+app.post('/events', async (req, res) => {
     const event = req.body;
     console.log('Received event from Hubitat:', event);
+
+    // Auto-log power and temperature to history
+    if (event.name === 'power' || event.name === 'temperature' || event.name === 'energy') {
+        try {
+            await db.run(
+                'INSERT INTO device_history (device_id, attribute, value) VALUES (?, ?, ?)',
+                [event.deviceId, event.name, event.value]
+            );
+        } catch (err) {
+            console.error('Failed to log device history:', err.message);
+        }
+    }
+
     io.emit('hub_event', event);
     res.status(200).send('Event received');
 });

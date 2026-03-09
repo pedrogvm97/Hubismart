@@ -96,6 +96,101 @@ const App = () => {
             </div>
           </div>
         )}
+
+        {activeTab === 'devices' && (
+          <div className="flex flex-col gap-8">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-bold text-white mb-1">Your Devices</h3>
+                <p className="text-slate-400">Manage and control all paired hardware.</p>
+              </div>
+              <button className="premium-button flex items-center gap-2">
+                <Zap size={18} />
+                Add Group
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {/* Device Card Template */}
+              {[1, 2, 3, 4, 5, 6].map(i => (
+                <div key={i} className="glass-card p-6 flex flex-col gap-6 hover:bg-white/10 transition-all duration-300">
+                  <div className="flex justify-between items-start">
+                    <div className="flex gap-4">
+                      <div className="p-4 bg-indigo-500/10 rounded-2xl text-indigo-400">
+                        <Home size={24} />
+                      </div>
+                      <div>
+                        <h4 className="font-bold text-white text-lg">Smart Plug {i}</h4>
+                        <p className="text-slate-500">Living Room • Kitchen</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 px-3 py-1 bg-emerald-500/10 text-emerald-500 rounded-full text-xs font-bold uppercase tracking-wider">
+                      Online
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between items-center pt-4 border-t border-white/5">
+                    <div className="flex flex-col">
+                      <span className="text-slate-500 text-xs uppercase font-bold tracking-widest">Power</span>
+                      <span className="text-white font-medium">42.5 W</span>
+                    </div>
+                    <button className="h-10 w-20 bg-slate-800 rounded-full relative p-1 transition-all duration-300 hover:bg-slate-700">
+                      <div className="absolute left-1 top-1 w-8 h-8 bg-indigo-500 rounded-full shadow-lg shadow-indigo-500/40"></div>
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'automations' && (
+          <div className="flex flex-col gap-8">
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-bold text-white mb-1">Automations</h3>
+                <p className="text-slate-400">Create powerful rules and schedules.</p>
+              </div>
+              <button className="premium-button">Create New</button>
+            </div>
+            <div className="glass-card p-12 flex flex-col items-center text-center gap-4">
+              <div className="p-6 bg-indigo-500/10 rounded-full text-indigo-400 mb-2">
+                <Zap size={48} />
+              </div>
+              <h4 className="text-xl font-bold text-white">No Automations Yet</h4>
+              <p className="text-slate-400 max-w-sm">The automation engine is being primed. Soon you'll be able to create complex logic using triggers and groups.</p>
+            </div>
+          </div>
+        )}
+
+        {activeTab === 'settings' && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <div className="glass-card p-8">
+              <h3 className="text-xl font-bold text-white mb-6">Hub Configuration</h3>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-slate-500 text-sm font-medium mb-2">Hubitat IP Address</label>
+                  <input type="text" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors" defaultValue="192.168.1.128:65" />
+                </div>
+                <div>
+                  <label className="block text-slate-500 text-sm font-medium mb-2">Maker API App ID</label>
+                  <input type="text" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors" placeholder="123" />
+                </div>
+                <div>
+                  <label className="block text-slate-500 text-sm font-medium mb-2">Access Token</label>
+                  <input type="password" className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500 transition-colors" placeholder="••••••••" />
+                </div>
+                <button className="w-full py-3 bg-indigo-500 hover:bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 transition-all active:scale-[0.98] mt-4">Save Configuration</button>
+              </div>
+            </div>
+
+            <div className="glass-card p-8 bg-indigo-600/5">
+              <h3 className="text-xl font-bold text-white mb-4">Floor Plan (Beta)</h3>
+              <p className="text-slate-400 mb-6">Design your home sketch here. You can add multiple floors and place devices directly on the map.</p>
+              <button className="premium-button w-full">Launch Sketcher</button>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
