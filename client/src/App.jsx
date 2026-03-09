@@ -115,6 +115,27 @@ const App = () => {
                   />
                 </div>
                 <button
+                  onClick={async () => {
+                    setConnectionStatus('loading');
+                    try {
+                      const response = await fetch('/api/config/verify', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(hubConfig)
+                      });
+                      const data = await response.json();
+                      if (data.success) {
+                        setConnectionStatus('success');
+                        setIsEditing(false);
+                      } else {
+                        setConnectionStatus('error');
+                        alert(data.error || 'Connection Failed');
+                      }
+                    } catch (e) {
+                      setConnectionStatus('error');
+                      alert('Network Error');
+                    }
+                  }}
                   className={`w-full py-4 rounded-xl font-bold transition-all active:scale-[0.98] ${connectionStatus === 'success' && !isEditing
                       ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/20 shadow-lg shadow-emerald-500/10'
                       : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/25'
@@ -138,15 +159,76 @@ const App = () => {
                   <label className="block text-slate-500 text-xs font-bold mb-2 uppercase tracking-widest">Export/Import Password</label>
                   <input
                     type="password"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 transition-all"
+                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 transition-all font-mono"
                     value={backupPassword}
                     onChange={(e) => setBackupPassword(e.target.value)}
                     placeholder="Enter password"
                   />
                 </div>
                 <div className="grid grid-cols-2 gap-4">
-                  <button className="py-4 bg-emerald-600/20 text-emerald-400 font-bold rounded-xl border border-emerald-500/20 hover:bg-emerald-600/30 transition-all active:scale-[0.98]">Export</button>
-                  <button className="py-4 bg-indigo-600/20 text-indigo-400 font-bold rounded-xl border border-indigo-500/20 hover:bg-indigo-600/30 transition-all active:scale-[0.98]">Import</button>
+                  <button
+                    onClick={async () => {
+                      if (!backupPassword) return alert('Enter a password for the backup file.');
+                      try {
+                        const res = await fetch('/api/config/export', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ password: backupPassword })
+                        });
+                        const data = await res.json();
+                        const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `hubismart-config-${new Date().toISOString().split('T')[0]}.json`;
+                        a.click();
+                      } catch (e) {
+                        alert('Export failed');
+                      }
+                    }}
+                    className="py-4 bg-emerald-600/20 text-emerald-400 font-bold rounded-xl border border-emerald-500/20 hover:bg-emerald-600/30 transition-all active:scale-[0.98]"
+                  >
+                    Export
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!backupPassword) return alert('Enter the password for this file.');
+                      const input = document.createElement('input');
+                      input.type = 'file';
+                      input.onchange = async (e) => {
+                        const file = e.target.files[0];
+                        const reader = new FileReader();
+                        reader.onload = async (re) => {
+                          const encryptedData = JSON.parse(re.target.result);
+                          try {
+                            const res = await fetch('/api/config/import', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ encryptedData, password: backupPassword })
+                            });
+                            const data = await res.json();
+                            if (data.success) {
+                              alert('Configuration imported successfully!');
+                              if (data.hubHint) {
+                                setHubConfig({ ip: data.hubHint.ip, appId: data.hubHint.appId, token: data.hubHint.token });
+                                setConnectionStatus('success');
+                                setIsEditing(false);
+                              }
+                            } else {
+                              alert(data.error || 'Import failed');
+                            }
+                          } catch (e) {
+                            alert('Network Error');
+                          }
+                        };
+                        reader.readAsText(file);
+                      };
+                      input.click();
+                    }}
+                    className="py-4 bg-indigo-600/20 text-indigo-400 font-bold rounded-xl border border-indigo-500/20 hover:bg-indigo-600/30 transition-all active:scale-[0.98]"
+                  >
+                    Import
+                  </button>
                 </div>
               </div>
             </div>
