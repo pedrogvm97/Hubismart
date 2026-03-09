@@ -1,5 +1,5 @@
 # Build Stage
-FROM node:20-slim AS builder
+FROM node:20 AS builder
 
 WORKDIR /app
 
@@ -19,14 +19,19 @@ RUN cd client && npm run build
 # Final Stage
 FROM node:20-slim
 
+# Install system dependencies for sqlite3 and native builds
+RUN apt-get update && apt-get install -y \
+    python3 \
+    make \
+    g++ \
+    sqlite3 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Install production dependencies for server
 COPY server/package*.json ./
 RUN npm install --production
-
-# Install sqlite3 separately if needed for the platform
-RUN npm install sqlite3
 
 # Copy built frontend from builder stage
 COPY --from=builder /app/client/dist ./public
