@@ -111,8 +111,9 @@ class RecorderService {
             this.stopAllRecorders();
         }
 
-        // Trigger an immediate pruner check
-        this.runPruner();
+        // Trigger an immediate hard cap enforcement and pruner check
+        await this.enforceHardDiskCap();
+        await this.runPruner();
         return updated;
     }
 
@@ -125,11 +126,17 @@ class RecorderService {
             this.syncRecorders();
         }, 30000);
 
-        // Pruning and retention checker runs every 60 seconds
+        // Retention checker runs every 30 seconds
         this.prunerInterval = setInterval(() => {
             this.runPruner();
-        }, 60000);
-        setTimeout(() => this.runPruner(), 10000);
+        }, 30000);
+
+        // Absolute Hard Disk Cap checker runs every 10 seconds
+        this.hardCapInterval = setInterval(() => {
+            this.enforceHardDiskCap();
+        }, 10000);
+
+        setTimeout(() => this.runPruner(), 3000);
     }
 
     async syncRecorders() {
@@ -478,29 +485,98 @@ class RecorderService {
                 this.log('Pruner', `Pruned ${oldSegments.length} segments past rolling buffer`);
             }
 
-            // 2. Max Storage Cap Safeguard (FIFO)
-            const totalBytes = await this.calculateTotalStorageBytes();
-            const maxAllowedBytes = (settings.max_storage_gb || 200.0) * 1024 * 1024 * 1024;
-
-            if (totalBytes > maxAllowedBytes) {
-                this.log('Pruner', `Storage exceeded cap: ${(totalBytes / 1024 / 1024 / 1024).toFixed(2)}GB > ${settings.max_storage_gb}GB. Evicting oldest records...`);
-
-                // First evict oldest non-permanent files
-                const overCapSegments = await this.db.all(`
-                    SELECT * FROM recordings 
-                    WHERE keep_permanent = 0
-                    ORDER BY start_time ASC
-                    LIMIT 50
-                `);
-
-                for (const seg of overCapSegments) {
-                    this.deleteRecordingFiles(seg);
-                    await this.db.run('DELETE FROM recordings WHERE id = ?', [seg.id]);
-                }
-            }
+            // 2. Enforce Absolute Hard Storage Cap (Strict FIFO Oldest-to-Newest)
+            await this.enforceHardDiskCap();
         } catch (err) {
             this.log('Pruner', `Error in retention pruner: ${err.message}`);
         }
+    }
+
+    // Measure exact physical byte size of all files on disk in storageDir
+    getActualDiskUsage(dir = this.storageDir) {
+        let total = 0;
+        try {
+            if (!fs.existsSync(dir)) return 0;
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+                const fullPath = path.join(dir, entry.name);
+                if (entry.isDirectory()) {
+                    total += this.getActualDiskUsage(fullPath);
+                } else if (entry.isFile()) {
+                    try {
+                        total += fs.statSync(fullPath).size;
+                    } catch (e) { }
+                }
+            }
+        } catch (e) { }
+        return total;
+    }
+
+    // Absolute hard disk cap: if even 1 byte over limit, immediately delete from oldest to newest
+    async enforceHardDiskCap() {
+        try {
+            const settings = await this.getSettings();
+            const maxAllowedBytes = (parseFloat(settings.max_storage_gb) || 200.0) * 1024 * 1024 * 1024;
+            let actualBytes = this.getActualDiskUsage();
+
+            if (actualBytes > maxAllowedBytes) {
+                const overBytes = actualBytes - maxAllowedBytes;
+                this.log('HardCap', `Storage is ${(overBytes / (1024 * 1024)).toFixed(2)} MB over hard cap (${actualBytes} > ${maxAllowedBytes}). Deleting from oldest to newest...`);
+
+                // 1. Delete from database records strictly from oldest to newest
+                const oldestRecordings = await this.db.all('SELECT * FROM recordings ORDER BY start_time ASC');
+
+                for (const rec of oldestRecordings) {
+                    if (actualBytes <= maxAllowedBytes) break;
+
+                    this.deleteRecordingFiles(rec);
+                    await this.db.run('DELETE FROM recordings WHERE id = ?', [rec.id]);
+                    actualBytes = this.getActualDiskUsage();
+                    this.log('HardCap', `Evicted oldest recording ${rec.filename}. Current usage: ${(actualBytes / (1024 * 1024 * 1024)).toFixed(3)} GB`);
+                }
+
+                // 2. If still over limit (e.g. unindexed or orphaned files), delete oldest files directly on disk
+                if (actualBytes > maxAllowedBytes) {
+                    this.deleteOldestDiskFiles(maxAllowedBytes);
+                }
+            }
+        } catch (err) {
+            this.log('HardCap', `Error enforcing hard disk cap: ${err.message}`);
+        }
+    }
+
+    deleteOldestDiskFiles(maxAllowedBytes) {
+        try {
+            const allFiles = [];
+            const collectFiles = (dir) => {
+                if (!fs.existsSync(dir)) return;
+                const entries = fs.readdirSync(dir, { withFileTypes: true });
+                for (const entry of entries) {
+                    const full = path.join(dir, entry.name);
+                    if (entry.isDirectory()) {
+                        collectFiles(full);
+                    } else if (entry.isFile()) {
+                        try {
+                            const stat = fs.statSync(full);
+                            allFiles.push({ path: full, size: stat.size, mtime: stat.mtimeMs });
+                        } catch (e) { }
+                    }
+                }
+            };
+
+            collectFiles(this.storageDir);
+            allFiles.sort((a, b) => a.mtime - b.mtime); // Oldest modified first
+
+            let currentBytes = this.getActualDiskUsage();
+            for (const file of allFiles) {
+                if (currentBytes <= maxAllowedBytes) break;
+                try {
+                    fs.unlinkSync(file.path);
+                    currentBytes -= file.size;
+                    this.log('HardCap', `Unlinked orphaned file ${path.basename(file.path)} (${(file.size / 1024).toFixed(0)} KB)`);
+                } catch (e) { }
+            }
+        } catch (e) { }
     }
 
     deleteRecordingFiles(recording) {
@@ -515,8 +591,7 @@ class RecorderService {
     }
 
     async calculateTotalStorageBytes() {
-        const row = await this.db.get('SELECT SUM(file_size_bytes) as total FROM recordings');
-        return row && row.total ? Number(row.total) : 0;
+        return this.getActualDiskUsage();
     }
 
     async getStorageStatus() {

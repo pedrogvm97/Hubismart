@@ -755,18 +755,19 @@ const GalleryViewer = () => {
         </div>
       )}
 
-      {/* Storage & Retention Settings Modal */}
+      {/* Storage & Retention Settings Modal - Fixed Height & Scrollable with Sticky Save */}
       {showSettingsModal && (
-        <div className="fixed inset-0 z-50 bg-black/85 backdrop-blur-xl flex items-center justify-center p-4 md:p-8">
-          <div className="w-full max-w-2xl bg-slate-950 border border-white/20 rounded-3xl p-8 shadow-2xl flex flex-col gap-6">
-            <div className="flex items-center justify-between pb-4 border-b border-white/10">
+        <div className="fixed inset-0 z-50 bg-black/90 backdrop-blur-xl flex items-center justify-center p-3 sm:p-6">
+          <div className="w-full max-w-3xl max-h-[88vh] bg-slate-950 border border-white/20 rounded-3xl shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            {/* Sticky Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-white/10 bg-slate-900/95 flex-shrink-0 z-20">
               <div className="flex items-center gap-4">
-                <div className="p-3 bg-indigo-600 rounded-2xl text-white">
+                <div className="p-3 bg-indigo-600 rounded-2xl text-white shadow-lg shadow-indigo-600/30">
                   <Sliders size={28} />
                 </div>
                 <div>
                   <h3 className="text-2xl font-bold text-white">Recording & Storage Settings</h3>
-                  <p className="text-slate-400 text-lg">Define storage limits, continuous buffer and retention</p>
+                  <p className="text-slate-400 text-base">Define absolute storage cap, continuous buffer, and retention</p>
                 </div>
               </div>
               <button
@@ -778,17 +779,33 @@ const GalleryViewer = () => {
               </button>
             </div>
 
-            <div className="space-y-6">
-              {/* Max Storage Limit Slider */}
-              <div>
-                <div className="flex justify-between items-center mb-2">
-                  <label className="text-slate-300 font-bold text-lg">
-                    Maximum Occupied Storage Space
-                  </label>
-                  <span className="font-mono text-2xl font-black text-indigo-400">
-                    {storageSettings.max_storage_gb} GB
-                  </span>
+            {/* Scrollable Body Container */}
+            <div className="p-6 overflow-y-auto flex-1 space-y-6">
+              {/* Max Storage Limit Slider & Direct Input */}
+              <div className="p-6 bg-slate-900/60 border border-white/10 rounded-2xl">
+                <div className="flex flex-wrap justify-between items-center gap-4 mb-3">
+                  <div>
+                    <label className="text-white font-bold text-xl block">
+                      Maximum Occupied Space on Disk (Absolute Cap)
+                    </label>
+                    <p className="text-amber-400 text-sm font-semibold mt-0.5">
+                      Strict Hard Ceiling: Deletion from oldest to newest occurs immediately if over by even 1 byte.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="number"
+                      min="5"
+                      max="10000"
+                      step="5"
+                      value={storageSettings.max_storage_gb}
+                      onChange={(e) => setStorageSettings({ ...storageSettings, max_storage_gb: parseFloat(e.target.value) || 20 })}
+                      className="w-28 bg-slate-800 border-2 border-indigo-500 rounded-xl px-3 py-2 text-white text-2xl font-mono font-black text-right focus:outline-none"
+                    />
+                    <span className="text-indigo-400 font-bold text-xl font-mono">GB</span>
+                  </div>
                 </div>
+
                 <input
                   type="range"
                   min="20"
@@ -800,6 +817,7 @@ const GalleryViewer = () => {
                 />
                 <div className="flex justify-between text-slate-500 text-sm font-mono mt-1">
                   <span>20 GB</span>
+                  <span>100 GB</span>
                   <span>250 GB</span>
                   <span>500 GB</span>
                   <span>1000 GB (1 TB)</span>
@@ -872,7 +890,7 @@ const GalleryViewer = () => {
                       <h4 className="text-xl font-bold text-white">Keep Motion & Tags</h4>
                     </div>
                     <p className="text-slate-400 text-base">
-                      Deletes non-motion segments older than the buffer, while keeping all human, animal, and motion events indefinitely.
+                      Deletes non-motion segments older than the buffer, keeping human, animal, and motion events indefinitely (subject to the hard disk cap).
                     </p>
                   </div>
 
@@ -910,18 +928,18 @@ const GalleryViewer = () => {
               </div>
             </div>
 
-            {/* Modal Actions */}
-            <div className="flex justify-end gap-4 pt-4 border-t border-white/10">
+            {/* Sticky Modal Actions Footer - Always Visible */}
+            <div className="flex justify-end gap-4 p-6 border-t border-white/10 bg-slate-900/95 flex-shrink-0 z-20 shadow-2xl">
               <button
                 onClick={() => setShowSettingsModal(false)}
-                className="px-6 py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xl rounded-2xl transition-all"
+                className="px-8 py-4 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xl rounded-2xl transition-all cursor-pointer"
               >
                 Cancel
               </button>
               <button
                 onClick={handleSaveSettings}
                 disabled={savingSettings}
-                className="px-8 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xl rounded-2xl shadow-xl shadow-indigo-600/30 transition-all active:scale-95 disabled:opacity-50"
+                className="px-10 py-4 bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xl rounded-2xl shadow-xl shadow-indigo-600/30 transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
               >
                 {savingSettings ? 'Saving...' : 'Save Settings'}
               </button>
