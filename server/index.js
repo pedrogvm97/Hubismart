@@ -350,7 +350,7 @@ const fs = require('fs');
 app.get('/api/recordings', async (req, res) => {
     try {
         if (!db) return res.status(503).json({ error: 'Database initializing' });
-        const { camera_id, motion_type, has_motion, from_time, to_time, search, limit = 100, offset = 0 } = req.query;
+        const { camera_id, motion_type, has_motion, from_time, to_time, search, limit = 1000, offset = 0, order = 'desc' } = req.query;
         let query = `
             SELECT r.*, c.name as camera_name, c.ip as camera_ip 
             FROM recordings r 
@@ -384,7 +384,8 @@ app.get('/api/recordings', async (req, res) => {
             params.push(`%${search}%`, `%${search}%`, `%${search}%`);
         }
 
-        query += ' ORDER BY r.start_time DESC LIMIT ? OFFSET ?';
+        const sortDir = order.toLowerCase() === 'asc' ? 'ASC' : 'DESC';
+        query += ` ORDER BY r.start_time ${sortDir} LIMIT ? OFFSET ?`;
         params.push(+limit, +offset);
 
         const rows = await db.all(query, params);

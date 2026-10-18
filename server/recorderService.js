@@ -181,20 +181,26 @@ class RecorderService {
 
         this.log('Start', `Starting continuous 24/7 recording for ${camera.name} (${camera.ip})`);
 
-        // Segment format: cam_<id>_%Y%m%d_%H%M%S.mp4 (2-minute segments)
+        // Segment format: cam_<id>_%Y%m%d_%H%M%S.mp4 (2-hour segments)
         const segmentPattern = path.join(camDir, `cam_${camera.id}_%Y%m%d_%H%M%S.mp4`);
 
-        // Arguments for zero-CPU stream copy and native AAC audio
+        // Arguments for zero-CPU stream copy, synchronous AAC audio (aligned to 0.0s), and 2-hour segments
         const args = [
             '-nostdin',
             '-loglevel', 'warning',
             '-rtsp_transport', 'tcp',
             '-i', rtspUrl,
+            '-map', '0:v:0',
+            '-map', '0:a:0?',
             '-c:v', 'copy',
             '-c:a', 'aac',
+            '-b:a', '64k',
+            '-ar', '16000',
+            '-af', 'asetpts=PTS-STARTPTS',
             '-f', 'segment',
-            '-segment_time', '120', // 120 seconds (2 minutes)
+            '-segment_time', '7200', // 7200 seconds (2 hours)
             '-segment_format', 'mp4',
+            '-segment_format_options', 'movflags=+faststart',
             '-reset_timestamps', '1',
             '-strftime', '1',
             segmentPattern
@@ -323,8 +329,16 @@ class RecorderService {
             }
 
             const startTime = this.parseFilenameTimestamp(filename);
-            const durationEstimate = 120; // 2 minutes per segment
-            const endTime = new Date(startTime.getTime() + durationEstimate * 1000);
+            let durationSeconds = 7200; // 2 hours default
+            try {
+                const probeCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`;
+                const stdout = require('child_process').execSync(probeCmd, { encoding: 'utf8', timeout: 5000 });
+                const parsed = parseFloat(stdout.trim());
+                if (!isNaN(parsed) && parsed > 0) {
+                    durationSeconds = Math.round(parsed);
+                }
+            } catch (e) { }
+            const endTime = new Date(startTime.getTime() + durationSeconds * 1000);
 
             // Generate thumbnail
             const thumbFilename = filename.replace('.mp4', '_thumb.jpg');
@@ -348,7 +362,7 @@ class RecorderService {
                 thumbPath,
                 startTime.toISOString(),
                 endTime.toISOString(),
-                durationEstimate,
+                durationSeconds,
                 stats.size,
                 motionResult.hasMotion ? 1 : 0,
                 motionResult.motionType,
@@ -357,7 +371,7 @@ class RecorderService {
             ]);
 
             const newRecord = await this.db.get('SELECT * FROM recordings WHERE id = ?', [result.lastID]);
-            this.log('Indexer', `Indexed segment ${filename} (${(stats.size / (1024 * 1024)).toFixed(1)}MB, motion: ${motionResult.motionType})`);
+            this.log('Indexer', `Indexed segment ${filename} (${(stats.size / (1024 * 1024)).toFixed(1)}MB, duration: ${durationSeconds}s, motion: ${motionResult.motionType})`);
 
             if (this.io) {
                 this.io.emit('new_recording', newRecord);
@@ -395,11 +409,12 @@ class RecorderService {
     }
 
     async analyzeMotion(videoPath) {
-        // Fast motion activity detection using FFmpeg scene change filter
+        // Fast motion activity detection using FFmpeg scene change filter at 1 frame per second
         return new Promise((resolve) => {
             const args = [
+                '-nostdin',
                 '-i', videoPath,
-                '-vf', "select='gt(scene,0.025)',metadata=print:file=-",
+                '-vf', "fps=1,select='gt(scene,0.025)',metadata=print:file=-",
                 '-f', 'null',
                 '-'
             ];
