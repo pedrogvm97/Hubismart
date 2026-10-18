@@ -85,29 +85,45 @@ async function setupDatabase() {
         await db.run("INSERT INTO groups (name, type) VALUES ('Bedroom', 'room')");
     }
 
-    // Default cameras seed based on local discovery
+    // Remove any hub from cameras table
+    await db.run("DELETE FROM cameras WHERE is_hub = 1 OR ip = '192.168.1.72' OR name LIKE '%Hub%'");
+
+    // Initialize or update the 4 cameras with their verified verification codes and paths
     const cameraCount = await db.get('SELECT COUNT(*) as count FROM cameras');
     if (cameraCount.count === 0) {
         await db.run(
             `INSERT INTO cameras (name, ip, port, channel, stream_path, username, verification_code, mac, serial, model, is_hub, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            ['EZVIZ Camera 1', '192.168.1.66', 554, 1, '/h264/ch1/main/av_stream', 'admin', '', '78:f2:35:60:1e:21', 'ec97e0dd435a', 'EZVIZ IP Camera', 0, 'online']
+            ['EZVIZ Camera 1', '192.168.1.66', 554, 1, '/Streaming/Channels/101', 'admin', 'HEHKYB', '78:f2:35:60:1e:21', 'ec97e0dd435a', 'EZVIZ IP Camera', 0, 'streaming']
         );
         await db.run(
             `INSERT INTO cameras (name, ip, port, channel, stream_path, username, verification_code, mac, serial, model, is_hub, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            ['EZVIZ Camera 2', '192.168.1.67', 554, 1, '/h264/ch1/main/av_stream', 'admin', '', '78:f2:35:60:43:f9', 'ec97e0d94ea6', 'EZVIZ IP Camera', 0, 'online']
+            ['EZVIZ Camera 2', '192.168.1.67', 554, 1, '/ch1/main/av_stream', 'admin', 'SJNYZI', '78:f2:35:60:43:f9', 'ec97e0d94ea6', 'EZVIZ IP Camera', 0, 'streaming']
         );
         await db.run(
             `INSERT INTO cameras (name, ip, port, channel, stream_path, username, verification_code, mac, serial, model, is_hub, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            ['EZVIZ Camera 3', '192.168.1.69', 554, 1, '/h264/ch1/main/av_stream', 'admin', '', '78:f2:35:60:3b:ce', 'ec97e0dd438a', 'EZVIZ IP Camera', 0, 'online']
+            ['EZVIZ Camera 3', '192.168.1.69', 554, 1, '/h264/ch1/main/av_stream', 'admin', 'HWGQML', '78:f2:35:60:3b:ce', 'ec97e0dd438a', 'EZVIZ IP Camera', 0, 'streaming']
         );
         await db.run(
             `INSERT INTO cameras (name, ip, port, channel, stream_path, username, verification_code, mac, serial, model, is_hub, status)
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-            ['EZVIZ Hub Feed (Ch 1)', '192.168.1.72', 554, 1, '/Streaming/Channels/101', 'admin', '', '64:f2:fb:f3:13:86', 'EZVIZ_X5S', 'CS-X5S-8W Hub', 1, 'online']
+            ['EZVIZ Camera 4', '', 554, 1, '/h264/ch1/main/av_stream', 'admin', 'C9OEMG', '', '', 'EZVIZ IP Camera (Awaiting Pairing)', 0, 'awaiting_reset']
         );
+    } else {
+        // Update existing cameras with their working codes and paths
+        await db.run("UPDATE cameras SET verification_code = 'HEHKYB', stream_path = '/Streaming/Channels/101', status = 'streaming' WHERE ip = '192.168.1.66'");
+        await db.run("UPDATE cameras SET verification_code = 'SJNYZI', stream_path = '/ch1/main/av_stream', status = 'streaming' WHERE ip = '192.168.1.67'");
+        await db.run("UPDATE cameras SET verification_code = 'HWGQML', stream_path = '/h264/ch1/main/av_stream', status = 'streaming' WHERE ip = '192.168.1.69'");
+        const cam4 = await db.get("SELECT * FROM cameras WHERE verification_code = 'C9OEMG' OR name LIKE '%Camera 4%'");
+        if (!cam4) {
+            await db.run(
+                `INSERT INTO cameras (name, ip, port, channel, stream_path, username, verification_code, mac, serial, model, is_hub, status)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                ['EZVIZ Camera 4', '', 554, 1, '/h264/ch1/main/av_stream', 'admin', 'C9OEMG', '', '', 'EZVIZ IP Camera (Awaiting Pairing)', 0, 'awaiting_reset']
+            );
+        }
     }
 
     return db;
