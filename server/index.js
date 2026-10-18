@@ -9,11 +9,13 @@ require('dotenv').config();
 const HubitatClient = require('./hubitatClient');
 const setupDatabase = require('./database');
 const CameraService = require('./cameraService');
+const RecorderService = require('./recorderService');
 
 const app = express();
 const server = http.createServer(app);
 let db;
 let cameraService;
+let recorderService;
 
 const io = new Server(server, {
     cors: {
@@ -26,7 +28,8 @@ const io = new Server(server, {
 (async () => {
     db = await setupDatabase();
     cameraService = new CameraService(db, io);
-    console.log('Database and CameraService initialized');
+    recorderService = new RecorderService(db, io, cameraService);
+    console.log('Database, CameraService, and RecorderService initialized');
 })();
 
 let hubitat = new HubitatClient({
@@ -338,8 +341,223 @@ app.get('/api/cameras/debug/logs', (req, res) => {
     res.json(cameraService.getLogs());
 });
 
+// ======================== RECORDINGS & GALLERY ROUTES ========================
+const fs = require('fs');
+
+app.get('/api/recordings', async (req, res) => {
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        const { camera_id, motion_type, has_motion, from_time, to_time, search, limit = 100, offset = 0 } = req.query;
+        let query = `
+            SELECT r.*, c.name as camera_name, c.ip as camera_ip 
+            FROM recordings r 
+            LEFT JOIN cameras c ON r.camera_id = c.id 
+            WHERE 1=1
+        `;
+        const params = [];
+
+        if (camera_id) {
+            query += ' AND r.camera_id = ?';
+            params.push(camera_id);
+        }
+        if (has_motion !== undefined && has_motion !== '') {
+            query += ' AND r.has_motion = ?';
+            params.push(+has_motion);
+        }
+        if (motion_type && motion_type !== 'all') {
+            query += ' AND r.motion_type = ?';
+            params.push(motion_type);
+        }
+        if (from_time) {
+            query += ' AND r.start_time >= ?';
+            params.push(from_time);
+        }
+        if (to_time) {
+            query += ' AND r.start_time <= ?';
+            params.push(to_time);
+        }
+        if (search) {
+            query += ' AND (r.detected_persons LIKE ? OR r.motion_type LIKE ? OR c.name LIKE ?)';
+            params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+        }
+
+        query += ' ORDER BY r.start_time DESC LIMIT ? OFFSET ?';
+        params.push(+limit, +offset);
+
+        const rows = await db.all(query, params);
+        res.json(rows);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/recordings/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        const recording = await db.get('SELECT r.*, c.name as camera_name FROM recordings r LEFT JOIN cameras c ON r.camera_id = c.id WHERE r.id = ?', [req.params.id]);
+        if (!recording) return res.status(404).json({ error: 'Recording not found' });
+        res.json(recording);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Stream MP4 video with HTTP 206 Partial Content range requests and AAC audio
+app.get('/api/recordings/:id/video', async (req, res) => {
+    try {
+        if (!db) return res.status(503).send('Database initializing');
+        const recording = await db.get('SELECT * FROM recordings WHERE id = ?', [req.params.id]);
+        if (!recording || !fs.existsSync(recording.filepath)) {
+            return res.status(404).send('Recording video file not found');
+        }
+
+        const stat = fs.statSync(recording.filepath);
+        const fileSize = stat.size;
+        const range = req.headers.range;
+
+        if (range) {
+            const parts = range.replace(/bytes=/, "").split("-");
+            const start = parseInt(parts[0], 10);
+            const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+            const chunksize = (end - start) + 1;
+            const file = fs.createReadStream(recording.filepath, { start, end });
+            const head = {
+                'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+                'Accept-Ranges': 'bytes',
+                'Content-Length': chunksize,
+                'Content-Type': 'video/mp4',
+            };
+            res.writeHead(206, head);
+            file.pipe(res);
+        } else {
+            const head = {
+                'Content-Length': fileSize,
+                'Content-Type': 'video/mp4',
+            };
+            res.writeHead(200, head);
+            fs.createReadStream(recording.filepath).pipe(res);
+        }
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
+// Serve thumbnail image
+app.get('/api/recordings/:id/thumbnail', async (req, res) => {
+    try {
+        if (!db) return res.status(503).send('Database initializing');
+        const recording = await db.get('SELECT * FROM recordings WHERE id = ?', [req.params.id]);
+        if (!recording || !recording.thumbnail_path || !fs.existsSync(recording.thumbnail_path)) {
+            return res.status(404).send('Thumbnail not found');
+        }
+        res.sendFile(recording.thumbnail_path);
+    } catch (err) {
+        res.status(500).send(err.message);
+    }
+});
+
+// Toggle permanent lock on recording
+app.post('/api/recordings/:id/lock', async (req, res) => {
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        const rec = await db.get('SELECT * FROM recordings WHERE id = ?', [req.params.id]);
+        if (!rec) return res.status(404).json({ error: 'Recording not found' });
+        const newLock = rec.keep_permanent ? 0 : 1;
+        await db.run('UPDATE recordings SET keep_permanent = ? WHERE id = ?', [newLock, req.params.id]);
+        res.json({ success: true, keep_permanent: newLock });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Tag recording with identified person or motion type
+app.post('/api/recordings/:id/tag', async (req, res) => {
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        const { person, motion_type } = req.body;
+        const rec = await db.get('SELECT * FROM recordings WHERE id = ?', [req.params.id]);
+        if (!rec) return res.status(404).json({ error: 'Recording not found' });
+
+        let persons = [];
+        try { persons = JSON.parse(rec.detected_persons || '[]'); } catch (e) { }
+        if (person && !persons.includes(person.trim())) {
+            persons.push(person.trim());
+        }
+        const updatedMotion = motion_type || rec.motion_type;
+        await db.run(
+            'UPDATE recordings SET detected_persons = ?, motion_type = ?, has_motion = 1 WHERE id = ?',
+            [JSON.stringify(persons), updatedMotion, req.params.id]
+        );
+        res.json({ success: true, detected_persons: persons, motion_type: updatedMotion });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Delete recording file and record
+app.delete('/api/recordings/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        const rec = await db.get('SELECT * FROM recordings WHERE id = ?', [req.params.id]);
+        if (!rec) return res.status(404).json({ error: 'Recording not found' });
+        if (recorderService) {
+            recorderService.deleteRecordingFiles(rec);
+        }
+        await db.run('DELETE FROM recordings WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Storage status and continuous duration estimator
+app.get('/api/storage/status', async (req, res) => {
+    try {
+        if (!recorderService) return res.status(503).json({ error: 'Recorder initializing' });
+        const status = await recorderService.getStorageStatus();
+        res.json(status);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Update storage settings (max quota, continuous rolling buffer, retention mode)
+app.post('/api/storage/settings', async (req, res) => {
+    try {
+        if (!recorderService) return res.status(503).json({ error: 'Recorder initializing' });
+        const updated = await recorderService.updateSettings(req.body);
+        res.json(updated);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Known persons endpoints
+app.get('/api/persons', async (req, res) => {
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        const persons = await db.all('SELECT * FROM known_persons ORDER BY name ASC');
+        res.json(persons);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/persons', async (req, res) => {
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        const { name, notes } = req.body;
+        if (!name) return res.status(400).json({ error: 'Name is required' });
+        const result = await db.run('INSERT INTO known_persons (name, notes) VALUES (?, ?)', [name.trim(), notes || '']);
+        const person = await db.get('SELECT * FROM known_persons WHERE id = ?', [result.lastID]);
+        res.json(person);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 const PORT = process.env.PORT || 3020;
 server.listen(PORT, () => {
     console.log(`Hubismart server running on port ${PORT}`);
 });
+

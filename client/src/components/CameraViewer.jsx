@@ -22,11 +22,12 @@ import {
   Search,
   Activity,
   HelpCircle,
-  Layers
+  Layers,
+  Film
 } from 'lucide-react';
 import { cameraApi } from '../api';
 
-const CameraViewer = () => {
+const CameraViewer = ({ onNavigateToGallery }) => {
   const [cameras, setCameras] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isGridView, setIsGridView] = useState(false);
@@ -218,6 +219,16 @@ const CameraViewer = () => {
           >
             {isAutoCycle ? <Pause size={28} /> : <Play size={28} />}
           </button>
+
+          {onNavigateToGallery && (
+            <button
+              onClick={onNavigateToGallery}
+              className="p-4 bg-indigo-600/20 hover:bg-indigo-600 text-indigo-400 hover:text-white rounded-2xl border border-indigo-500/30 transition-all duration-200 shadow-md active:scale-95"
+              title="Open Surveillance Recordings & Gallery"
+            >
+              <Film size={28} />
+            </button>
+          )}
 
           <button
             onClick={() => setShowDebug(!showDebug)}

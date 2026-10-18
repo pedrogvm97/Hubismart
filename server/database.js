@@ -126,6 +126,61 @@ async function setupDatabase() {
         }
     }
 
+    // Continuous & Event Recordings table
+    await db.exec(`
+    CREATE TABLE IF NOT EXISTS recordings (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      camera_id INTEGER NOT NULL,
+      filename TEXT NOT NULL,
+      filepath TEXT NOT NULL,
+      thumbnail_path TEXT,
+      start_time DATETIME NOT NULL,
+      end_time DATETIME NOT NULL,
+      duration_seconds REAL DEFAULT 0,
+      file_size_bytes INTEGER DEFAULT 0,
+      has_motion INTEGER DEFAULT 0,
+      motion_type TEXT DEFAULT 'none',
+      detected_persons TEXT DEFAULT '[]',
+      keep_permanent INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (camera_id) REFERENCES cameras(id) ON DELETE CASCADE
+    )
+  `);
+
+    // Storage and Retention Settings table
+    await db.exec(`
+    CREATE TABLE IF NOT EXISTS recording_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      storage_path TEXT DEFAULT '/app/recordings',
+      max_storage_gb REAL DEFAULT 200.0,
+      continuous_buffer_minutes INTEGER DEFAULT 60,
+      retention_mode TEXT DEFAULT 'keep_motion',
+      detect_motion INTEGER DEFAULT 1,
+      detect_human INTEGER DEFAULT 1,
+      detect_animal INTEGER DEFAULT 1,
+      auto_record INTEGER DEFAULT 1
+    )
+  `);
+
+    // Known / Identified Persons table for facial & body tagging
+    await db.exec(`
+    CREATE TABLE IF NOT EXISTS known_persons (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+    // Initialize default recording settings if not already present
+    const settingsExist = await db.get('SELECT id FROM recording_settings WHERE id = 1');
+    if (!settingsExist) {
+        await db.run(`
+            INSERT INTO recording_settings (id, storage_path, max_storage_gb, continuous_buffer_minutes, retention_mode, detect_motion, detect_human, detect_animal, auto_record)
+            VALUES (1, '/app/recordings', 200.0, 60, 'keep_motion', 1, 1, 1, 1)
+        `);
+    }
+
     return db;
 }
 

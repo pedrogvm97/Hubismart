@@ -55,3 +55,52 @@ export const cameraApi = {
         return `${API_BASE}/cameras/${id}/snapshot${token ? `?t=${token}` : ''}`;
     }
 };
+
+export const recordingsApi = {
+    getRecordings: async (params = {}) => {
+        const response = await axios.get(`${API_BASE}/recordings`, { params });
+        return response.data;
+    },
+    getRecording: async (id) => {
+        const response = await axios.get(`${API_BASE}/recordings/${id}`);
+        return response.data;
+    },
+    getVideoUrl: (id) => {
+        return `${API_BASE}/recordings/${id}/video`;
+    },
+    getThumbnailUrl: (id) => {
+        return `${API_BASE}/recordings/${id}/thumbnail`;
+    },
+    toggleLock: async (id) => {
+        const response = await axios.post(`${API_BASE}/recordings/${id}/lock`);
+        return response.data;
+    },
+    tagRecording: async (id, data) => {
+        const response = await axios.post(`${API_BASE}/recordings/${id}/tag`, data);
+        return response.data;
+    },
+    deleteRecording: async (id) => {
+        const response = await axios.delete(`${API_BASE}/recordings/${id}`);
+        return response.data;
+    },
+    getPersons: async () => {
+        const response = await axios.get(`${API_BASE}/persons`);
+        return response.data;
+    },
+    addPerson: async (data) => {
+        const response = await axios.post(`${API_BASE}/persons`, data);
+        return response.data;
+    }
+};
+
+export const storageApi = {
+    getStatus: async () => {
+        const response = await axios.get(`${API_BASE}/storage/status`);
+        return response.data;
+    },
+    updateSettings: async (settings) => {
+        const response = await axios.post(`${API_BASE}/storage/settings`, settings);
+        return response.data;
+    }
+};
+

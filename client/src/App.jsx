@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Video, Home, Zap, Settings, Activity, LayoutGrid, Bell, RefreshCw } from 'lucide-react';
+import { Video, Home, Zap, Settings, Activity, LayoutGrid, Bell, RefreshCw, Film } from 'lucide-react';
 import CameraViewer from './components/CameraViewer';
+import GalleryViewer from './components/GalleryViewer';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('cameras');
@@ -19,7 +20,8 @@ const App = () => {
 
         <nav className="flex flex-col gap-4 w-full items-center">
           {[
-            { id: 'cameras', icon: Video, title: 'EZVIZ Camera Feeds' },
+            { id: 'cameras', icon: Video, title: 'EZVIZ Live Camera Feeds' },
+            { id: 'gallery', icon: Film, title: 'Surveillance Recordings & Gallery' },
             { id: 'dashboard', icon: LayoutGrid, title: 'Dashboard' },
             { id: 'home', icon: Home, title: 'Home Overview' },
             { id: 'devices', icon: Activity, title: 'Connected Devices' },
@@ -65,7 +67,8 @@ const App = () => {
         </header>
 
         {/* Tab Views */}
-        {activeTab === 'cameras' && <CameraViewer />}
+        {activeTab === 'cameras' && <CameraViewer onNavigateToGallery={() => setActiveTab('gallery')} />}
+        {activeTab === 'gallery' && <GalleryViewer />}
 
         {activeTab === 'dashboard' && (
           <div className="p-8 bg-slate-900/60 border border-white/10 rounded-3xl text-center">
