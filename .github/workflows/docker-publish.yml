@@ -1,4 +1,4 @@
-name: Docker Build and Publish
+name: Docker Build, Auto-Versioning, and Publish
 
 on:
   push:
@@ -10,26 +10,60 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build:
+  build-and-release:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
       packages: write
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Log in to the Container registry
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Calculate Semantic Version
+        id: versioning
+        run: |
+          git fetch --tags --force
+          LATEST_TAG=$(git tag -l "v*" --sort=-v:refname | head -n 1)
+          if [ -z "$LATEST_TAG" ]; then
+            NEW_TAG="v1.0.1"
+            NEW_VER="1.0.1"
+          else
+            CLEAN_VER="${LATEST_TAG#v}"
+            IFS='.' read -r MAJOR MINOR PATCH <<< "$CLEAN_VER"
+            PATCH=$((PATCH + 1))
+            NEW_VER="$MAJOR.$MINOR.$PATCH"
+            NEW_TAG="v$NEW_VER"
+          fi
+          echo "Latest tag: $LATEST_TAG -> New tag: $NEW_TAG (version: $NEW_VER)"
+          echo "tag=$NEW_TAG" >> $GITHUB_OUTPUT
+          echo "version=$NEW_VER" >> $GITHUB_OUTPUT
+
+      - name: Create Git Tag and GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${{ steps.versioning.outputs.tag }}" -m "Release ${{ steps.versioning.outputs.tag }}"
+          git push origin "${{ steps.versioning.outputs.tag }}"
+          gh release create "${{ steps.versioning.outputs.tag }}" --title "Hubismart ${{ steps.versioning.outputs.tag }}" --generate-notes || true
+
       - name: Lowercase image name
         run: |
-          echo "IMAGE_NAME_LOWERCASE=${IMAGE_NAME,,}" >>${GITHUB_ENV}
+          echo "IMAGE_NAME_LOWERCASE=${IMAGE_NAME,,}" >> ${GITHUB_ENV}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Extract metadata (tags, labels) for Docker
         id: meta
@@ -37,8 +71,10 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME_LOWERCASE }}
           tags: |
-            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
-            type=raw,value=main,enable=${{ github.ref == format('refs/heads/{0}', 'main') }}
+            type=raw,value=latest,enable=true
+            type=raw,value=main,enable=true
+            type=raw,value=${{ steps.versioning.outputs.tag }}
+            type=raw,value=${{ steps.versioning.outputs.version }}
             type=sha
 
       - name: Build and push Docker image
@@ -48,3 +84,5 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

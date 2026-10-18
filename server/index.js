@@ -8,16 +8,12 @@ require('dotenv').config();
 
 const HubitatClient = require('./hubitatClient');
 const setupDatabase = require('./database');
+const CameraService = require('./cameraService');
 
 const app = express();
 const server = http.createServer(app);
 let db;
-
-// Database and Hubitat Client Initialization
-(async () => {
-    db = await setupDatabase();
-    console.log('Database initialized');
-})();
+let cameraService;
 
 const io = new Server(server, {
     cors: {
@@ -25,6 +21,13 @@ const io = new Server(server, {
         methods: ['GET', 'POST']
     }
 });
+
+// Database and Service Initialization
+(async () => {
+    db = await setupDatabase();
+    cameraService = new CameraService(db, io);
+    console.log('Database and CameraService initialized');
+})();
 
 let hubitat = new HubitatClient({
     ip: process.env.HUBITAT_IP || '',
@@ -219,6 +222,122 @@ app.post('/api/config/import', async (req, res) => {
         res.status(400).json({ error: error.message });
     }
 });
+
+// ======================== CAMERA ROUTES ========================
+app.get('/api/cameras', async (req, res) => {
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        const cameras = await db.all('SELECT * FROM cameras ORDER BY is_hub ASC, id ASC');
+        res.json(cameras);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/cameras/scan', async (req, res) => {
+    try {
+        if (!cameraService) return res.status(503).json({ error: 'Camera service initializing' });
+        const cameras = await cameraService.scanNetwork();
+        res.json(cameras);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/cameras', async (req, res) => {
+    const { name, ip, port, channel, stream_path, username, verification_code, mac, serial, model, is_hub } = req.body;
+    try {
+        const result = await db.run(
+            `INSERT INTO cameras (name, ip, port, channel, stream_path, username, verification_code, mac, serial, model, is_hub, status)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [name || 'New Camera', ip, port || 554, channel || 1, stream_path || '/h264/ch1/main/av_stream', username || 'admin', verification_code || '', mac || '', serial || '', model || '', is_hub ? 1 : 0, 'online']
+        );
+        const newCam = await db.get('SELECT * FROM cameras WHERE id = ?', [result.lastID]);
+        res.json(newCam);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.put('/api/cameras/:id', async (req, res) => {
+    const { name, ip, port, channel, stream_path, username, verification_code, model } = req.body;
+    try {
+        await db.run(
+            `UPDATE cameras SET name = ?, ip = ?, port = ?, channel = ?, stream_path = ?, username = ?, verification_code = ?, model = ?
+             WHERE id = ?`,
+            [name, ip, port || 554, channel || 1, stream_path, username || 'admin', verification_code, model, req.params.id]
+        );
+        const updated = await db.get('SELECT * FROM cameras WHERE id = ?', [req.params.id]);
+        res.json(updated);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/cameras/:id', async (req, res) => {
+    try {
+        await db.run('DELETE FROM cameras WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/cameras/:id/stream', async (req, res) => {
+    try {
+        if (!cameraService || !db) return res.status(503).send('Service initializing');
+        const camera = await db.get('SELECT * FROM cameras WHERE id = ?', [req.params.id]);
+        if (!camera) return res.status(404).send('Camera not found');
+        cameraService.handleStream(camera, req, res);
+    } catch (error) {
+        console.error('Stream error:', error);
+        res.status(500).send(error.message);
+    }
+});
+
+app.get('/api/cameras/:id/snapshot', async (req, res) => {
+    try {
+        if (!cameraService || !db) return res.status(503).send('Service initializing');
+        const camera = await db.get('SELECT * FROM cameras WHERE id = ?', [req.params.id]);
+        if (!camera) return res.status(404).send('Camera not found');
+        const imageBuffer = await cameraService.getSnapshot(camera);
+        res.writeHead(200, {
+            'Content-Type': 'image/jpeg',
+            'Content-Length': imageBuffer.length,
+            'Cache-Control': 'no-cache'
+        });
+        res.end(imageBuffer);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/cameras/:id/test', async (req, res) => {
+    try {
+        if (!cameraService || !db) return res.status(503).json({ error: 'Service initializing' });
+        let camera = await db.get('SELECT * FROM cameras WHERE id = ?', [req.params.id]);
+        if (!camera) return res.status(404).json({ error: 'Camera not found' });
+        
+        // If request includes a temporary code to test with, override it for testing
+        if (req.body && req.body.verification_code !== undefined) {
+            camera = { ...camera, verification_code: req.body.verification_code };
+        }
+
+        const result = await cameraService.testConnection(camera);
+        // If test succeeded or failed with auth, update status in DB
+        const newStatus = result.success ? 'streaming' : (result.status === 'auth_required' ? 'auth_required' : 'error');
+        await db.run('UPDATE cameras SET status = ? WHERE id = ?', [newStatus, camera.id]);
+        res.json({ ...result, updatedStatus: newStatus });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/cameras/debug/logs', (req, res) => {
+    if (!cameraService) return res.json([]);
+    res.json(cameraService.getLogs());
+});
+
 
 const PORT = process.env.PORT || 3020;
 server.listen(PORT, () => {

@@ -1,102 +1,132 @@
 import React, { useState } from 'react';
-import { Home, Zap, Settings, Activity, LayoutGrid, Bell } from 'lucide-react';
+import { Video, Home, Zap, Settings, Activity, LayoutGrid, Bell, RefreshCw } from 'lucide-react';
+import CameraViewer from './components/CameraViewer';
 
 const App = () => {
-  const [activeTab, setActiveTab] = useState('settings');
+  const [activeTab, setActiveTab] = useState('cameras');
   const [hubConfig, setHubConfig] = useState({ ip: '', appId: '', token: '' });
   const [isEditing, setIsEditing] = useState(true);
-  const [connectionStatus, setConnectionStatus] = useState('idle'); // idle, loading, success, error
+  const [connectionStatus, setConnectionStatus] = useState('idle');
   const [backupPassword, setBackupPassword] = useState('');
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#0f172a] text-slate-200">
-      {/* Sidebar */}
-      <aside className="w-20 lg:w-64 glass-card m-4 mr-0 flex flex-col items-center lg:items-start py-8 px-4 gap-8">
-        <div className="flex items-center gap-3 px-2 mb-4">
-          <div className="p-2 bg-indigo-500 rounded-xl shadow-lg shadow-indigo-500/20">
-            <Zap className="text-white" size={24} />
-          </div>
-          <h1 className="text-xl font-bold hidden lg:block bg-gradient-to-r from-white to-slate-400 bg-clip-text text-transparent">Hubismart</h1>
+    <div className="flex h-screen overflow-hidden bg-[#0a0f1d] text-slate-100 text-lg">
+      {/* Sidebar - Pure Icons (Symbols Over Text Strict Rule) with Large Hit Targets */}
+      <aside className="w-24 glass-card m-4 mr-0 flex flex-col items-center py-8 px-3 gap-8 rounded-3xl border border-white/10 shadow-2xl">
+        <div className="flex items-center justify-center p-3.5 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-600/30" title="Hubismart Central">
+          <Zap className="text-white" size={32} />
         </div>
 
-        <nav className="flex flex-col gap-2 w-full">
+        <nav className="flex flex-col gap-4 w-full items-center">
           {[
-            { id: 'dashboard', icon: LayoutGrid, label: 'Dashboard' },
-            { id: 'home', icon: Home, label: 'Home' },
-            { id: 'automation', icon: Zap, label: 'Automation' },
-            { id: 'devices', icon: Activity, label: 'Devices' },
-            { id: 'settings', icon: Settings, label: 'Settings' }
+            { id: 'cameras', icon: Video, title: 'EZVIZ Camera Feeds' },
+            { id: 'dashboard', icon: LayoutGrid, title: 'Dashboard' },
+            { id: 'home', icon: Home, title: 'Home Overview' },
+            { id: 'devices', icon: Activity, title: 'Connected Devices' },
+            { id: 'settings', icon: Settings, title: 'System Settings' }
           ].map((item) => (
             <button
               key={item.id}
               onClick={() => setActiveTab(item.id)}
-              className={`flex items-center gap-4 p-3 rounded-xl transition-all duration-200 group ${activeTab === item.id
-                ? 'bg-white/10 text-white shadow-inner shadow-white/5'
-                : 'text-slate-400 hover:text-white hover:bg-white/5'
-                }`}
+              className={`p-4 rounded-2xl transition-all duration-200 flex items-center justify-center active:scale-95 shadow-md ${
+                activeTab === item.id
+                  ? 'bg-indigo-600 text-white shadow-indigo-600/30 border border-indigo-400'
+                  : 'text-slate-400 hover:text-white hover:bg-white/10 border border-transparent'
+              }`}
+              title={item.title}
             >
-              <item.icon size={22} className={activeTab === item.id ? 'text-indigo-400' : 'group-hover:text-indigo-400'} />
-              <span className="hidden lg:block font-medium">{item.label}</span>
+              <item.icon size={30} />
             </button>
           ))}
         </nav>
       </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-y-auto p-4 lg:p-8">
-        <header className="flex justify-between items-center mb-10">
+      {/* Main Content Area */}
+      <main className="flex-1 overflow-y-auto p-6 lg:p-10">
+        <header className="flex justify-between items-center mb-8">
           <div>
-            <h2 className="text-3xl font-bold text-white mb-2 capitalize">{activeTab}</h2>
-            <p className="text-slate-400">Hubismart Control Interface</p>
+            <h1 className="text-4xl font-extrabold text-white mb-2 tracking-tight">Hubismart</h1>
+            <p className="text-slate-400 text-xl font-medium">Smart Home & Surveillance Manager</p>
           </div>
-          <div className="flex gap-4">
-            <button className="p-3 glass-card text-slate-400 hover:text-white transition-colors">
-              <Bell size={20} />
+          <div className="flex items-center gap-4">
+            <button
+              className="p-4 bg-slate-900/60 border border-white/10 rounded-2xl text-slate-300 hover:text-white hover:bg-slate-800 transition-all shadow-lg active:scale-95"
+              title="Notifications"
+            >
+              <Bell size={26} />
             </button>
-            <div className="h-12 w-12 rounded-full bg-gradient-to-br from-indigo-500 to-purple-600 border-2 border-white/10 shadow-lg"></div>
+            <div
+              className="h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 border-2 border-white/20 shadow-xl flex items-center justify-center"
+              title="System Profile"
+            >
+              <Zap size={24} className="text-white" />
+            </div>
           </div>
         </header>
 
-        {activeTab === 'dashboard' && null}
-        {activeTab === 'home' && null}
-        {activeTab === 'automation' && null}
+        {/* Tab Views */}
+        {activeTab === 'cameras' && <CameraViewer />}
+
+        {activeTab === 'dashboard' && (
+          <div className="p-8 bg-slate-900/60 border border-white/10 rounded-3xl text-center">
+            <h3 className="text-2xl font-bold text-white mb-2">Dashboard</h3>
+            <p className="text-slate-400">Overview metrics and shortcuts</p>
+          </div>
+        )}
+
+        {activeTab === 'home' && (
+          <div className="p-8 bg-slate-900/60 border border-white/10 rounded-3xl text-center">
+            <h3 className="text-2xl font-bold text-white mb-2">Home Rooms</h3>
+            <p className="text-slate-400">Room management and zones</p>
+          </div>
+        )}
 
         {activeTab === 'devices' && (
           <div className="flex flex-col gap-6">
-            <div className="flex gap-4 border-b border-white/5 pb-2">
-              <button className="text-white font-bold border-b-2 border-indigo-500 px-4 py-2 hover:bg-white/5 transition-all">Added Devices</button>
-              <button className="text-slate-400 hover:text-white px-4 py-2 hover:bg-white/5 transition-all">New Devices</button>
+            <div className="flex gap-4 border-b border-white/10 pb-3">
+              <button
+                className="text-white font-bold border-b-4 border-indigo-500 px-6 py-3 text-xl hover:bg-white/5 transition-all"
+                title="View added devices"
+              >
+                Added Devices
+              </button>
             </div>
           </div>
         )}
 
         {activeTab === 'settings' && (
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-            <div className="glass-card p-8">
+            <div className="glass-card p-8 rounded-3xl border border-white/10">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-xl font-bold text-white">Hubitat Connection</h3>
+                <h3 className="text-2xl font-bold text-white">Hubitat Connection</h3>
                 {!isEditing && connectionStatus === 'success' && (
-                  <button onClick={() => setIsEditing(true)} className="text-indigo-400 text-sm font-bold hover:text-indigo-300 transition-colors">Edit</button>
+                  <button
+                    onClick={() => setIsEditing(true)}
+                    className="p-3 bg-indigo-600/20 text-indigo-400 rounded-xl hover:bg-indigo-600/30"
+                    title="Edit Hubitat Settings"
+                  >
+                    <Settings size={22} />
+                  </button>
                 )}
               </div>
 
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-5">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
-                    <label className="block text-slate-500 text-xs font-bold mb-2 uppercase tracking-widest">Hub IP</label>
+                    <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-widest">Hub IP</label>
                     <input
                       disabled={!isEditing}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 disabled:opacity-50 transition-all font-mono"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-lg focus:outline-none focus:border-indigo-500 disabled:opacity-50 transition-all font-mono"
                       value={hubConfig.ip}
                       onChange={(e) => setHubConfig({ ...hubConfig, ip: e.target.value })}
                       placeholder="e.g. 192.168.1.65"
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-500 text-xs font-bold mb-2 uppercase tracking-widest">App ID</label>
+                    <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-widest">App ID</label>
                     <input
                       disabled={!isEditing}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 disabled:opacity-50 transition-all font-mono"
+                      className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-lg focus:outline-none focus:border-indigo-500 disabled:opacity-50 transition-all font-mono"
                       value={hubConfig.appId}
                       onChange={(e) => setHubConfig({ ...hubConfig, appId: e.target.value })}
                       placeholder="e.g. 119"
@@ -104,11 +134,11 @@ const App = () => {
                   </div>
                 </div>
                 <div>
-                  <label className="block text-slate-500 text-xs font-bold mb-2 uppercase tracking-widest">Access Token</label>
+                  <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-widest">Access Token</label>
                   <input
                     type="password"
                     disabled={!isEditing}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 disabled:opacity-50 transition-all font-mono"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-lg focus:outline-none focus:border-indigo-500 disabled:opacity-50 transition-all font-mono"
                     value={hubConfig.token}
                     onChange={(e) => setHubConfig({ ...hubConfig, token: e.target.value })}
                     placeholder="Enter token from Maker API"
@@ -136,30 +166,27 @@ const App = () => {
                       alert('Network Error');
                     }
                   }}
-                  className={`w-full py-4 rounded-xl font-bold transition-all active:scale-[0.98] ${connectionStatus === 'success' && !isEditing
-                      ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/20 shadow-lg shadow-emerald-500/10'
-                      : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg shadow-indigo-600/25'
-                    }`}
+                  className={`w-full py-5 rounded-2xl font-bold text-xl transition-all active:scale-[0.98] ${
+                    connectionStatus === 'success' && !isEditing
+                      ? 'bg-emerald-600/20 text-emerald-400 border border-emerald-500/20 shadow-lg'
+                      : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl shadow-indigo-600/25'
+                  }`}
                   disabled={connectionStatus === 'loading'}
+                  title="Verify Hubitat Connection"
                 >
-                  {connectionStatus === 'loading' ? 'Verifying...' : connectionStatus === 'success' && !isEditing ? 'Success!' : 'Verify Connection'}
+                  {connectionStatus === 'loading' ? 'Verifying...' : connectionStatus === 'success' && !isEditing ? 'Connected' : 'Verify Connection'}
                 </button>
-                {isEditing && hubConfig.ip && (
-                  <button onClick={() => setIsEditing(false)} className="w-full py-2 text-slate-500 text-sm hover:text-white transition-colors">
-                    Cancel
-                  </button>
-                )}
               </div>
             </div>
 
-            <div className="glass-card p-8 border-dashed border-2 border-white/5">
-              <h3 className="text-xl font-bold text-white mb-6">Configuration Persistence</h3>
-              <div className="space-y-4">
+            <div className="glass-card p-8 rounded-3xl border border-white/10">
+              <h3 className="text-2xl font-bold text-white mb-6">Configuration Persistence</h3>
+              <div className="space-y-5">
                 <div>
-                  <label className="block text-slate-500 text-xs font-bold mb-2 uppercase tracking-widest">Export/Import Password</label>
+                  <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-widest">Backup Encryption Password</label>
                   <input
                     type="password"
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-indigo-500/50 transition-all font-mono"
+                    className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-lg focus:outline-none focus:border-indigo-500 transition-all font-mono"
                     value={backupPassword}
                     onChange={(e) => setBackupPassword(e.target.value)}
                     placeholder="Enter password"
@@ -186,7 +213,8 @@ const App = () => {
                         alert('Export failed');
                       }
                     }}
-                    className="py-4 bg-emerald-600/20 text-emerald-400 font-bold rounded-xl border border-emerald-500/20 hover:bg-emerald-600/30 transition-all active:scale-[0.98]"
+                    className="py-5 bg-emerald-600/20 text-emerald-400 font-bold text-xl rounded-2xl border border-emerald-500/20 hover:bg-emerald-600/30 transition-all active:scale-[0.98]"
+                    title="Export Backup"
                   >
                     Export
                   </button>
@@ -225,7 +253,8 @@ const App = () => {
                       };
                       input.click();
                     }}
-                    className="py-4 bg-indigo-600/20 text-indigo-400 font-bold rounded-xl border border-indigo-500/20 hover:bg-indigo-600/30 transition-all active:scale-[0.98]"
+                    className="py-5 bg-indigo-600/20 text-indigo-400 font-bold text-xl rounded-2xl border border-indigo-500/20 hover:bg-indigo-600/30 transition-all active:scale-[0.98]"
+                    title="Import Backup"
                   >
                     Import
                   </button>
