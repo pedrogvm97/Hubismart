@@ -258,38 +258,33 @@ class UpdaterService {
                 });
             }
 
-            // 2. Spawn detached transient python helper to recreate container cleanly
-            // This ensures container can replace itself without getting terminated mid-request
-            const restartPy = `
-import urllib.request
-import http.client
-import socket
-import time
+            // 2. Remove any previous updater runner if present
+            await this.dockerRequest('DELETE', '/containers/hubismart-updater?force=true').catch(() => {});
 
-class UnixHTTPConnection(http.client.HTTPConnection):
-    def connect(self):
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.connect('/var/run/docker.sock')
+            // 3. Create transient sibling runner container with AutoRemove
+            const restartPy = `
+import http.client, socket, time, json
+
+def call(method, path, body=None):
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        s.connect('/var/run/docker.sock')
+        conn = http.client.HTTPConnection('localhost')
+        conn.sock = s
+        headers = {'Content-Type': 'application/json'} if body else {}
+        conn.request(method, path, body, headers)
+        res = conn.getresponse()
+        data = res.read()
+        s.close()
+        return res.status, data
+    except Exception as e:
+        return 0, str(e).encode()
 
 time.sleep(2)
-conn = UnixHTTPConnection('localhost')
+call('POST', '/containers/Hubismart/stop?t=10')
+call('DELETE', '/containers/Hubismart?force=true')
 
-# Stop existing container
-try:
-    conn.request('POST', '/containers/Hubismart/stop?t=5')
-    conn.getresponse().read()
-except:
-    pass
-
-# Remove old container
-try:
-    conn.request('DELETE', '/containers/Hubismart?force=true')
-    conn.getresponse().read()
-except:
-    pass
-
-# Create new container with new tag
-create_payload = '''{
+payload = json.dumps({
     "Image": "ghcr.io/pedrogvm97/hubismart:${targetTag}",
     "HostConfig": {
         "NetworkMode": "host",
@@ -301,25 +296,29 @@ create_payload = '''{
         ]
     },
     "Env": ["PORT=3020"]
-}'''
+})
 
-try:
-    conn.request('POST', '/containers/create?name=Hubismart', create_payload, {'Content-Type': 'application/json'})
-    res = conn.getresponse()
-    conn.request('POST', '/containers/Hubismart/start')
-    conn.getresponse().read()
-except:
-    pass
+call('POST', '/containers/create?name=Hubismart', payload)
+call('POST', '/containers/Hubismart/start')
 `;
 
-            const helperScriptPath = path.join(__dirname, 'recreate_container.py');
-            fs.writeFileSync(helperScriptPath, restartPy, 'utf8');
+            const runnerPayload = {
+                Image: `ghcr.io/pedrogvm97/hubismart:${targetTag}`,
+                Entrypoint: ['python3', '-c'],
+                Cmd: [restartPy],
+                HostConfig: {
+                    AutoRemove: true,
+                    Binds: ['/var/run/docker.sock:/var/run/docker.sock:rw']
+                }
+            };
 
-            const child = spawn('python3', [helperScriptPath], {
-                detached: true,
-                stdio: 'ignore'
-            });
-            child.unref();
+            const createRes = await this.dockerRequest('POST', '/containers/create?name=hubismart-updater', runnerPayload);
+            if (createRes.status === 201) {
+                await this.dockerRequest('POST', '/containers/hubismart-updater/start');
+                console.log('[UpdaterService] Transient sibling updater container launched successfully.');
+            } else {
+                throw new Error(`Failed to create updater runner: ${JSON.stringify(createRes.body)}`);
+            }
 
             return {
                 success: true,
