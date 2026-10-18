@@ -181,6 +181,25 @@ async function setupDatabase() {
         `);
     }
 
+    // System Settings for Updates & Versioning
+    await db.exec(`
+    CREATE TABLE IF NOT EXISTS system_settings (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      auto_update INTEGER DEFAULT 0,
+      check_interval_hours INTEGER DEFAULT 6,
+      current_version TEXT DEFAULT 'v1.0.3',
+      last_checked DATETIME
+    )
+  `);
+
+    const sysSettingsExist = await db.get('SELECT id FROM system_settings WHERE id = 1');
+    if (!sysSettingsExist) {
+        await db.run(`
+            INSERT INTO system_settings (id, auto_update, check_interval_hours, current_version, last_checked)
+            VALUES (1, 0, 6, 'v1.0.3', CURRENT_TIMESTAMP)
+        `);
+    }
+
     return db;
 }
 

@@ -10,12 +10,14 @@ const HubitatClient = require('./hubitatClient');
 const setupDatabase = require('./database');
 const CameraService = require('./cameraService');
 const RecorderService = require('./recorderService');
+const UpdaterService = require('./updaterService');
 
 const app = express();
 const server = http.createServer(app);
 let db;
 let cameraService;
 let recorderService;
+let updaterService;
 
 const io = new Server(server, {
     cors: {
@@ -29,7 +31,8 @@ const io = new Server(server, {
     db = await setupDatabase();
     cameraService = new CameraService(db, io);
     recorderService = new RecorderService(db, io, cameraService);
-    console.log('Database, CameraService, and RecorderService initialized');
+    updaterService = new UpdaterService(db, io);
+    console.log('Database, CameraService, RecorderService, and UpdaterService initialized');
 })();
 
 let hubitat = new HubitatClient({
@@ -551,6 +554,59 @@ app.post('/api/persons', async (req, res) => {
         const result = await db.run('INSERT INTO known_persons (name, notes) VALUES (?, ?)', [name.trim(), notes || '']);
         const person = await db.get('SELECT * FROM known_persons WHERE id = ?', [result.lastID]);
         res.json(person);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ======================== SYSTEM UPDATES & VERSIONING ROUTES ========================
+app.get('/api/system/version', async (req, res) => {
+    try {
+        if (!updaterService) return res.status(503).json({ error: 'Updater initializing' });
+        const status = await updaterService.checkForUpdates(false);
+        res.json(status);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/system/check-updates', async (req, res) => {
+    try {
+        if (!updaterService) return res.status(503).json({ error: 'Updater initializing' });
+        const status = await updaterService.checkForUpdates(false);
+        res.json(status);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/system/update', async (req, res) => {
+    try {
+        if (!updaterService) return res.status(503).json({ error: 'Updater initializing' });
+        const { targetTag } = req.body;
+        if (!targetTag) return res.status(400).json({ error: 'targetTag is required' });
+        const result = await updaterService.executeVersionSwitch(targetTag, false);
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/system/settings', async (req, res) => {
+    try {
+        if (!updaterService) return res.status(503).json({ error: 'Updater initializing' });
+        const settings = await updaterService.getSettings();
+        res.json(settings);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/system/settings', async (req, res) => {
+    try {
+        if (!updaterService) return res.status(503).json({ error: 'Updater initializing' });
+        const updated = await updaterService.updateSettings(req.body);
+        res.json(updated);
     } catch (err) {
         res.status(500).json({ error: err.message });
     }

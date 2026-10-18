@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Video, Home, Zap, Settings, Activity, LayoutGrid, Bell, RefreshCw, Film } from 'lucide-react';
+import { Video, Home, Zap, Settings, Activity, LayoutGrid, Bell, RefreshCw, Film, GitBranch } from 'lucide-react';
 import CameraViewer from './components/CameraViewer';
 import GalleryViewer from './components/GalleryViewer';
+import VersionManager from './components/VersionManager';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('cameras');
@@ -14,14 +15,24 @@ const App = () => {
     <div className="flex h-screen overflow-hidden bg-[#0a0f1d] text-slate-100 text-lg">
       {/* Sidebar - Pure Icons (Symbols Over Text Strict Rule) with Large Hit Targets */}
       <aside className="w-24 glass-card m-4 mr-0 flex flex-col items-center py-8 px-3 gap-8 rounded-3xl border border-white/10 shadow-2xl">
-        <div className="flex items-center justify-center p-3.5 bg-indigo-600 rounded-2xl shadow-xl shadow-indigo-600/30" title="Hubismart Central">
-          <Zap className="text-white" size={32} />
+        <div 
+          onClick={() => setActiveTab('updates')}
+          className="flex items-center justify-center p-2.5 bg-slate-900/80 rounded-2xl border border-white/10 shadow-xl cursor-pointer hover:scale-105 transition-transform" 
+          title="Hubismart Version Manager"
+        >
+          <img
+            src="/logo.png"
+            alt="Hubismart"
+            className="w-12 h-12 object-contain drop-shadow-[0_0_8px_rgba(99,102,241,0.5)]"
+            onError={(e) => { e.target.src = '/logo.svg'; }}
+          />
         </div>
 
         <nav className="flex flex-col gap-4 w-full items-center">
           {[
             { id: 'cameras', icon: Video, title: 'EZVIZ Live Camera Feeds' },
             { id: 'gallery', icon: Film, title: 'Surveillance Recordings & Gallery' },
+            { id: 'updates', icon: GitBranch, title: 'Updates, Releases & Downdater' },
             { id: 'dashboard', icon: LayoutGrid, title: 'Dashboard' },
             { id: 'home', icon: Home, title: 'Home Overview' },
             { id: 'devices', icon: Activity, title: 'Connected Devices' },
@@ -46,9 +57,26 @@ const App = () => {
       {/* Main Content Area */}
       <main className="flex-1 overflow-y-auto p-6 lg:p-10">
         <header className="flex justify-between items-center mb-8">
-          <div>
-            <h1 className="text-4xl font-extrabold text-white mb-2 tracking-tight">Hubismart</h1>
-            <p className="text-slate-400 text-xl font-medium">Smart Home & Surveillance Manager</p>
+          <div className="flex items-center gap-4">
+            <img
+              src="/logo.png"
+              alt="Hubismart Logo"
+              className="w-16 h-16 object-contain drop-shadow-[0_0_12px_rgba(99,102,241,0.4)]"
+              onError={(e) => { e.target.src = '/logo.svg'; }}
+            />
+            <div>
+              <div className="flex items-center gap-3">
+                <h1 className="text-4xl font-extrabold text-white tracking-tight">Hubismart</h1>
+                <button
+                  onClick={() => setActiveTab('updates')}
+                  className="px-3.5 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 font-mono font-bold text-base rounded-xl border border-indigo-500/30 transition-colors cursor-pointer"
+                  title="View Version Status & Updates"
+                >
+                  v1.0.4
+                </button>
+              </div>
+              <p className="text-slate-400 text-xl font-medium">Smart Home & Surveillance Manager</p>
+            </div>
           </div>
           <div className="flex items-center gap-4">
             <button
@@ -58,10 +86,11 @@ const App = () => {
               <Bell size={26} />
             </button>
             <div
-              className="h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 border-2 border-white/20 shadow-xl flex items-center justify-center"
-              title="System Profile"
+              className="h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 border-2 border-white/20 shadow-xl flex items-center justify-center cursor-pointer"
+              title="System Profile & Updates"
+              onClick={() => setActiveTab('updates')}
             >
-              <Zap size={24} className="text-white" />
+              <GitBranch size={24} className="text-white" />
             </div>
           </div>
         </header>
@@ -69,6 +98,7 @@ const App = () => {
         {/* Tab Views */}
         {activeTab === 'cameras' && <CameraViewer onNavigateToGallery={() => setActiveTab('gallery')} />}
         {activeTab === 'gallery' && <GalleryViewer />}
+        {activeTab === 'updates' && <VersionManager />}
 
         {activeTab === 'dashboard' && (
           <div className="p-8 bg-slate-900/60 border border-white/10 rounded-3xl text-center">

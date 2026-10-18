@@ -104,3 +104,27 @@ export const storageApi = {
     }
 };
 
+export const systemApi = {
+    getVersionStatus: async () => {
+        const response = await axios.get(`${API_BASE}/system/version`);
+        return response.data;
+    },
+    checkForUpdates: async () => {
+        const response = await axios.post(`${API_BASE}/system/check-updates`);
+        return response.data;
+    },
+    applyUpdate: async (targetTag) => {
+        const response = await axios.post(`${API_BASE}/system/update`, { targetTag });
+        return response.data;
+    },
+    getSettings: async () => {
+        const response = await axios.get(`${API_BASE}/system/settings`);
+        return response.data;
+    },
+    updateSettings: async (settings) => {
+        const response = await axios.post(`${API_BASE}/system/settings`, settings);
+        return response.data;
+    }
+};
+
+
