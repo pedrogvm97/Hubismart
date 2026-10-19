@@ -64,7 +64,7 @@ const GalleryViewer = () => {
   const [currentRecording, setCurrentRecording] = useState(null);
   const [currentPlayheadMs, setCurrentPlayheadMs] = useState(Date.now());
   const [isPlaying, setIsPlaying] = useState(true);
-  const [isMuted, setIsMuted] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
   const [volume, setVolume] = useState(0.8);
   const [audioBlocked, setAudioBlocked] = useState(false);
   const [timelineZoom, setTimelineZoom] = useState('24h'); // '24h', '12h', '6h', '2h', '30m'
@@ -248,7 +248,14 @@ const GalleryViewer = () => {
       if (currentRecording?.id === matching.id && videoRef.current) {
         videoRef.current.currentTime = offsetSeconds;
         if (startPlaying) {
-          videoRef.current.play().then(() => setIsPlaying(true)).catch(() => setAudioBlocked(true));
+          videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {
+            setAudioBlocked(true);
+            if (videoRef.current) {
+              videoRef.current.muted = true;
+              setIsMuted(true);
+              videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+            }
+          });
         }
       } else {
         setCurrentRecording(matching);
@@ -313,6 +320,11 @@ const GalleryViewer = () => {
         setAudioBlocked(false);
       }).catch(() => {
         setAudioBlocked(true);
+        if (videoRef.current) {
+          videoRef.current.muted = true;
+          setIsMuted(true);
+          videoRef.current.play().then(() => setIsPlaying(true)).catch(() => {});
+        }
       });
     }
   };
@@ -608,7 +620,14 @@ const GalleryViewer = () => {
                   if (videoRef.current) {
                     videoRef.current.volume = volume;
                     if (isPlaying) {
-                      videoRef.current.play().then(() => setAudioBlocked(false)).catch(() => setAudioBlocked(true));
+                      videoRef.current.play().then(() => setAudioBlocked(false)).catch(() => {
+                        setAudioBlocked(true);
+                        if (videoRef.current) {
+                          videoRef.current.muted = true;
+                          setIsMuted(true);
+                          videoRef.current.play().catch(() => {});
+                        }
+                      });
                     }
                   }
                 }}

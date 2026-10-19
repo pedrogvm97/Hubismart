@@ -277,7 +277,13 @@ const CameraViewer = ({ onNavigateToGallery }) => {
                       src={cameraApi.getStreamUrl(activeCamera.id, streamRefreshKey)}
                       alt={activeCamera.name}
                       className="w-full h-full object-contain"
-                      onError={() => setStreamError(true)}
+                      onError={() => {
+                        setStreamError(true);
+                        setTimeout(() => {
+                          setStreamError(false);
+                          setStreamRefreshKey(Date.now());
+                        }, 2500);
+                      }}
                     />
                   ) : (
                     <div className="flex flex-col items-center justify-center p-8 text-center">

@@ -201,12 +201,18 @@ class RecorderService {
         // Segment format: cam_<id>_%Y%m%d_%H%M%S.mp4 (2-hour segments)
         const segmentPattern = path.join(camDir, `cam_${camera.id}_%Y%m%d_%H%M%S.mp4`);
 
+        // RAM frame buffer for zero-RTSP live stream delivery
+        const liveDir = fs.existsSync('/dev/shm') ? '/dev/shm' : this.storageDir;
+        const liveJpgPath = path.join(liveDir, `cam_${camera.id}_live.jpg`);
+
         // Arguments for zero-CPU stream copy, synchronous AAC audio (aligned to 0.0s), and 2-hour segments
+        // PLUS concurrent live JPEG in RAM (/dev/shm) at 15 fps so live viewer never opens a second RTSP session
         const args = [
             '-nostdin',
             '-loglevel', 'warning',
             '-rtsp_transport', 'tcp',
             '-i', rtspUrl,
+            // Output 1: Continuous 2-hour MP4 recording segments
             '-map', '0:v:0',
             '-map', '0:a:0?',
             '-c:v', 'copy',
@@ -220,7 +226,16 @@ class RecorderService {
             '-segment_format_options', 'movflags=+faststart',
             '-reset_timestamps', '1',
             '-strftime', '1',
-            segmentPattern
+            segmentPattern,
+            // Output 2: Live JPEG frame in RAM at 15 fps for instantaneous zero-RTSP live streaming
+            '-map', '0:v:0',
+            '-an',
+            '-r', '15',
+            '-q:v', '4',
+            '-vf', 'scale=1280:-2',
+            '-update', '1',
+            '-y',
+            liveJpgPath
         ];
 
         let proc;
@@ -263,6 +278,11 @@ class RecorderService {
                 this.watchers.delete(camera.id);
             }
 
+            // Clean up live RAM frame buffer
+            try {
+                if (fs.existsSync(liveJpgPath)) fs.unlinkSync(liveJpgPath);
+            } catch (e) { }
+
             // Exponential backoff if camera connection fails immediately (< 20 seconds)
             if (lifespan < 20000) {
                 const prev = this.cameraRetryState.get(camera.id) || { backoffMs: 15000 };
@@ -300,6 +320,13 @@ class RecorderService {
                 try { rec.process.kill('SIGKILL'); } catch (e) { }
             }, 3000);
         } catch (e) { }
+
+        try {
+            const liveDir = fs.existsSync('/dev/shm') ? '/dev/shm' : this.storageDir;
+            const liveJpgPath = path.join(liveDir, `cam_${cameraId}_live.jpg`);
+            if (fs.existsSync(liveJpgPath)) fs.unlinkSync(liveJpgPath);
+        } catch (e) { }
+
         this.activeRecorders.delete(cameraId);
         if (this.watchers.has(cameraId)) {
             clearInterval(this.watchers.get(cameraId));

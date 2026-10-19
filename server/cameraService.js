@@ -209,7 +209,25 @@ class CameraService {
         });
     }
 
+    getLiveJpgPath(cameraId) {
+        const liveDir = fs.existsSync('/dev/shm') ? '/dev/shm' : path.join(__dirname, 'recordings');
+        return path.join(liveDir, `cam_${cameraId}_live.jpg`);
+    }
+
     async getSnapshot(camera) {
+        const liveJpgPath = this.getLiveJpgPath(camera.id);
+        try {
+            if (fs.existsSync(liveJpgPath)) {
+                const stats = fs.statSync(liveJpgPath);
+                if (Date.now() - stats.mtimeMs < 10000) {
+                    const data = fs.readFileSync(liveJpgPath);
+                    if (data.length > 1000 && data[0] === 0xFF && data[1] === 0xD8) {
+                        return data;
+                    }
+                }
+            }
+        } catch (e) { }
+
         return new Promise((resolve, reject) => {
             const rtspUrl = this.buildRtspUrl(camera);
             const ffmpegBin = this.ffmpegPath || 'ffmpeg';
@@ -251,10 +269,7 @@ class CameraService {
 
     handleStream(camera, req, res) {
         const cameraId = camera.id;
-        const rtspUrl = this.buildRtspUrl(camera);
-        const ffmpegBin = this.ffmpegPath || 'ffmpeg';
-
-        this.log('Stream', `Client connected to stream for ${camera.name} (ID: ${cameraId})`);
+        const liveJpgPath = this.getLiveJpgPath(cameraId);
 
         res.writeHead(200, {
             'Content-Type': 'multipart/x-mixed-replace; boundary=ffserver',
@@ -263,16 +278,68 @@ class CameraService {
             'Pragma': 'no-cache'
         });
 
-        // Use mpjpeg muxer with standard boundary tag and single-thread decoding
+        // Fast path: Stream directly from high-speed RAM buffer (/dev/shm)
+        let isFresh = false;
+        try {
+            if (fs.existsSync(liveJpgPath)) {
+                const stats = fs.statSync(liveJpgPath);
+                if (Date.now() - stats.mtimeMs < 8000) {
+                    isFresh = true;
+                }
+            }
+        } catch (e) { }
+
+        if (isFresh) {
+            this.log('Stream', `Streaming ${camera.name} directly from RAM buffer (/dev/shm)`);
+            let closed = false;
+
+            const sendFrame = () => {
+                if (closed || res.writableEnded) return;
+                try {
+                    if (fs.existsSync(liveJpgPath)) {
+                        const frameData = fs.readFileSync(liveJpgPath);
+                        // Validate JPEG markers: SOI (0xFF, 0xD8) and EOI (0xFF, 0xD9)
+                        if (frameData.length > 1000 &&
+                            frameData[0] === 0xFF && frameData[1] === 0xD8 &&
+                            frameData[frameData.length - 2] === 0xFF && frameData[frameData.length - 1] === 0xD9) {
+                            res.write(`--ffserver\r\nContent-Type: image/jpeg\r\nContent-Length: ${frameData.length}\r\n\r\n`);
+                            res.write(frameData);
+                            res.write('\r\n');
+                        }
+                    }
+                } catch (err) {
+                    // Ignore transient file collision during FFmpeg atomic overwrite
+                }
+            };
+
+            // Send first frame immediately (0ms first frame latency!)
+            sendFrame();
+            const timer = setInterval(sendFrame, 66); // ~15 fps
+
+            req.on('close', () => {
+                closed = true;
+                clearInterval(timer);
+                this.log('Stream', `Client disconnected from RAM stream for ${camera.name}`);
+            });
+            return;
+        }
+
+        // Fallback: If recorder is not active, spawn a dedicated FFmpeg stream
+        const rtspUrl = this.buildRtspUrl(camera);
+        const ffmpegBin = this.ffmpegPath || 'ffmpeg';
+
+        this.log('Stream', `RAM buffer not active; spawning FFmpeg stream for ${camera.name}`);
+
         const args = [
             '-threads', '1',
             '-rtsp_transport', 'tcp',
             '-i', rtspUrl,
+            '-an',
             '-f', 'mpjpeg',
             '-boundary_tag', 'ffserver',
             '-q:v', '4',
             '-r', '15',
-            '-vf', 'scale=min(1280\\,iw):-2',
+            '-vf', 'scale=1280:-2',
             'pipe:1'
         ];
 
