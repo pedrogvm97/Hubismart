@@ -501,26 +501,28 @@ class RecorderService {
             const dur = Math.max(10, durationSeconds || 7200);
 
             if (dur <= 60) {
-                // Short clip: analyze entire clip with 1 thread
+                // Short clip: analyze entire clip with 1 thread, no audio
                 sampleArgs = [
                     '-threads', '1',
                     '-nostdin',
+                    '-an',
                     '-i', videoPath,
-                    '-vf', "fps=1,select='gt(scene,0.025)',metadata=print:file=-",
+                    '-vf', "select='gt(scene\\,0.025)',metadata=print:file=-",
                     '-f', 'null',
                     '-'
                 ];
             } else {
-                // For long segments (e.g. 2 hours), sample 15 seconds starting 30s in
-                // Fast keyframe seek before -i ensures instant startup with near 0% CPU
+                // For long segments (e.g. 2 hours), sample 10 seconds starting 30s in
+                // Fast keyframe seek before -i and -t 10 after -i ensures sub-second execution with near 0% CPU
                 const seekOffset = Math.min(30, Math.floor(dur * 0.1));
                 sampleArgs = [
                     '-threads', '1',
                     '-nostdin',
+                    '-an',
                     '-ss', String(seekOffset),
-                    '-t', '15',
                     '-i', videoPath,
-                    '-vf', "fps=1,select='gt(scene,0.025)',metadata=print:file=-",
+                    '-t', '10',
+                    '-vf', "select='gt(scene\\,0.025)',metadata=print:file=-",
                     '-f', 'null',
                     '-'
                 ];
