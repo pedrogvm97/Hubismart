@@ -3,6 +3,14 @@ import axios from 'axios';
 const API_BASE = '/api';
 
 export const hubApi = {
+    getConfig: async () => {
+        const response = await axios.get(`${API_BASE}/config/hubitat`);
+        return response.data;
+    },
+    verifyConfig: async (config) => {
+        const response = await axios.post(`${API_BASE}/config/verify`, config);
+        return response.data;
+    },
     getDevices: async () => {
         const response = await axios.get(`${API_BASE}/devices`);
         return response.data;
@@ -13,6 +21,48 @@ export const hubApi = {
     },
     sendCommand: async (id, command, secondary = '') => {
         const response = await axios.post(`${API_BASE}/devices/${id}/command`, { command, secondary });
+        return response.data;
+    },
+    updateDeviceMeta: async (id, data) => {
+        const response = await axios.put(`${API_BASE}/devices/${id}/meta`, data);
+        return response.data;
+    },
+    syncDriver: async (data) => {
+        const response = await axios.post(`${API_BASE}/hubitat/driver/sync`, data);
+        return response.data;
+    },
+    startPairing: async (type = 'zigbee', seconds = 60) => {
+        const response = await axios.post(`${API_BASE}/hubitat/pairing/start`, { type, seconds });
+        return response.data;
+    },
+    stopPairing: async () => {
+        const response = await axios.post(`${API_BASE}/hubitat/pairing/stop`);
+        return response.data;
+    }
+};
+
+export const floorPlanApi = {
+    getFloorPlans: async () => {
+        const response = await axios.get(`${API_BASE}/floorplans`);
+        return response.data;
+    },
+    saveFloorPlan: async (plan) => {
+        const response = await axios.post(`${API_BASE}/floorplans`, plan);
+        return response.data;
+    }
+};
+
+export const roomsApi = {
+    getRooms: async () => {
+        const response = await axios.get(`${API_BASE}/rooms`);
+        return response.data;
+    },
+    createRoom: async (room) => {
+        const response = await axios.post(`${API_BASE}/rooms`, room);
+        return response.data;
+    },
+    deleteRoom: async (id) => {
+        const response = await axios.delete(`${API_BASE}/rooms/${id}`);
         return response.data;
     }
 };

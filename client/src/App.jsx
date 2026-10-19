@@ -1,57 +1,108 @@
-import React, { useState } from 'react';
-import { Video, Home, Zap, Settings, Activity, LayoutGrid, Bell, RefreshCw, Film, GitBranch } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Video, Home, Zap, Settings, Activity, LayoutGrid, Bell, RefreshCw, Film, GitBranch, Cpu, ShieldCheck } from 'lucide-react';
 import CameraViewer from './components/CameraViewer';
 import GalleryViewer from './components/GalleryViewer';
 import VersionManager from './components/VersionManager';
+import RoomGridCreator from './components/RoomGridCreator';
+import DeviceManager from './components/DeviceManager';
 
 const App = () => {
   const [activeTab, setActiveTab] = useState('cameras');
-  const [hubConfig, setHubConfig] = useState({ ip: '', appId: '', token: '' });
+  const [hubConfig, setHubConfig] = useState({ ip: '', appId: '', token: '', hubUsername: '', hubPassword: '' });
   const [isEditing, setIsEditing] = useState(true);
   const [connectionStatus, setConnectionStatus] = useState('idle');
   const [backupPassword, setBackupPassword] = useState('');
+  const [appVersion, setAppVersion] = useState('v1.0.11');
+
+  useEffect(() => {
+    // Fetch persisted hubitat configuration on startup
+    (async () => {
+      try {
+        const res = await fetch('/api/config/hubitat');
+        const data = await res.json();
+        if (data.configured) {
+          setHubConfig(prev => ({
+            ...prev,
+            ip: data.ip || '',
+            appId: data.appId || '',
+            token: data.token || '',
+            hubUsername: data.hubUsername || ''
+          }));
+          setConnectionStatus('success');
+          setIsEditing(false);
+        }
+      } catch (e) {
+        console.warn('Failed to load initial hubitat config:', e);
+      }
+
+      try {
+        const vRes = await fetch('/api/system/version');
+        const vData = await vRes.json();
+        if (vData?.currentVersion) {
+          setAppVersion(vData.currentVersion);
+        }
+      } catch (e) {}
+    })();
+  }, []);
 
   return (
     <div className="flex h-screen overflow-hidden bg-[#0a0f1d] text-slate-100 text-lg">
-      {/* Sidebar - Pure Icons (Symbols Over Text Strict Rule) with Large Hit Targets */}
-      <aside className="w-24 glass-card m-4 mr-0 flex flex-col items-center py-8 px-3 gap-8 rounded-3xl border border-white/10 shadow-2xl">
-        <div 
-          onClick={() => setActiveTab('updates')}
-          className="flex items-center justify-center p-2.5 bg-slate-900/80 rounded-2xl border border-white/10 shadow-xl cursor-pointer hover:scale-105 transition-transform" 
-          title="Hubismart Version Manager"
-        >
-          <img
-            src="/logo.png"
-            alt="Hubismart"
-            className="w-12 h-12 object-contain drop-shadow-[0_0_8px_rgba(99,102,241,0.5)]"
-            onError={(e) => { e.target.src = '/logo.svg'; }}
-          />
+      {/* Sidebar - Pure Icons (Symbols Over Text Strict Rule) with Large Hit Targets & No-Scrollbar Overflow Protection */}
+      <aside className="w-24 glass-card my-4 ml-4 flex flex-col items-center py-6 px-2.5 rounded-3xl border border-white/10 shadow-2xl flex-shrink-0 max-h-[calc(100vh-2rem)] overflow-y-auto no-scrollbar justify-between gap-6">
+        <div className="flex flex-col items-center gap-6 w-full">
+          {/* Logo / Branding */}
+          <div 
+            onClick={() => setActiveTab('settings')}
+            className="flex items-center justify-center p-2.5 bg-slate-900/80 rounded-2xl border border-white/10 shadow-xl cursor-pointer hover:scale-105 transition-transform shrink-0" 
+            title="Homearr Settings & System"
+          >
+            <img
+              src="/logo.png"
+              alt="Homearr"
+              className="w-12 h-12 object-contain drop-shadow-[0_0_8px_rgba(99,102,241,0.5)]"
+              onError={(e) => { e.target.src = '/logo.svg'; }}
+            />
+          </div>
+
+          {/* Navigation Controls - Strict Symbols Only */}
+          <nav className="flex flex-col gap-3.5 w-full items-center">
+            {[
+              { id: 'cameras', icon: Video, title: 'EZVIZ Live Camera Feeds' },
+              { id: 'gallery', icon: Film, title: 'Surveillance Recordings & Gallery' },
+              { id: 'dashboard', icon: LayoutGrid, title: 'Dashboard' },
+              { id: 'home', icon: Home, title: 'Home Overview & Room Grid Creator' },
+              { id: 'devices', icon: Activity, title: 'Connected Devices & Drivers' }
+            ].map((item) => (
+              <button
+                key={item.id}
+                onClick={() => setActiveTab(item.id)}
+                className={`w-14 h-14 rounded-2xl transition-all duration-200 flex items-center justify-center flex-shrink-0 active:scale-95 shadow-md ${
+                  activeTab === item.id
+                    ? 'bg-indigo-600 text-white shadow-indigo-600/30 border border-indigo-400'
+                    : 'text-slate-400 hover:text-white hover:bg-white/10 border border-transparent'
+                }`}
+                title={item.title}
+              >
+                <item.icon size={28} />
+              </button>
+            ))}
+          </nav>
         </div>
 
-        <nav className="flex flex-col gap-4 w-full items-center">
-          {[
-            { id: 'cameras', icon: Video, title: 'EZVIZ Live Camera Feeds' },
-            { id: 'gallery', icon: Film, title: 'Surveillance Recordings & Gallery' },
-            { id: 'updates', icon: GitBranch, title: 'Updates, Releases & Downdater' },
-            { id: 'dashboard', icon: LayoutGrid, title: 'Dashboard' },
-            { id: 'home', icon: Home, title: 'Home Overview' },
-            { id: 'devices', icon: Activity, title: 'Connected Devices' },
-            { id: 'settings', icon: Settings, title: 'System Settings' }
-          ].map((item) => (
-            <button
-              key={item.id}
-              onClick={() => setActiveTab(item.id)}
-              className={`p-4 rounded-2xl transition-all duration-200 flex items-center justify-center active:scale-95 shadow-md ${
-                activeTab === item.id
-                  ? 'bg-indigo-600 text-white shadow-indigo-600/30 border border-indigo-400'
-                  : 'text-slate-400 hover:text-white hover:bg-white/10 border border-transparent'
-              }`}
-              title={item.title}
-            >
-              <item.icon size={30} />
-            </button>
-          ))}
-        </nav>
+        {/* Bottom Settings Navigation Icon */}
+        <div className="w-full flex justify-center shrink-0 pt-2 border-t border-white/10">
+          <button
+            onClick={() => setActiveTab('settings')}
+            className={`w-14 h-14 rounded-2xl transition-all duration-200 flex items-center justify-center flex-shrink-0 active:scale-95 shadow-md ${
+              activeTab === 'settings'
+                ? 'bg-indigo-600 text-white shadow-indigo-600/30 border border-indigo-400'
+                : 'text-slate-400 hover:text-white hover:bg-white/10 border border-transparent'
+            }`}
+            title="System Settings & Version Manager"
+          >
+            <Settings size={28} />
+          </button>
+        </div>
       </aside>
 
       {/* Main Content Area */}
@@ -60,78 +111,81 @@ const App = () => {
           <div className="flex items-center gap-4">
             <img
               src="/logo.png"
-              alt="Hubismart Logo"
+              alt="Homearr Logo"
               className="w-16 h-16 object-contain drop-shadow-[0_0_12px_rgba(99,102,241,0.4)]"
               onError={(e) => { e.target.src = '/logo.svg'; }}
             />
             <div>
               <div className="flex items-center gap-3">
-                <h1 className="text-4xl font-extrabold text-white tracking-tight">Hubismart</h1>
+                <h1 className="text-4xl font-extrabold text-white tracking-tight">Homearr</h1>
                 <button
-                  onClick={() => setActiveTab('updates')}
+                  onClick={() => setActiveTab('settings')}
                   className="px-3.5 py-1 bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 font-mono font-bold text-base rounded-xl border border-indigo-500/30 transition-colors cursor-pointer"
-                  title="View Version Status & Updates"
+                  title="View Version Status & Updates in Settings"
                 >
-                  v1.0.4
+                  {appVersion}
                 </button>
               </div>
               <p className="text-slate-400 text-xl font-medium">Smart Home & Surveillance Manager</p>
             </div>
           </div>
+
+          {/* Top Right Controls - Releases page icon removed per user request */}
           <div className="flex items-center gap-4">
+            {/* Hubitat Live Connection Status Badge */}
+            <div
+              className={`px-4 py-2.5 rounded-2xl border flex items-center gap-2.5 text-base font-bold shadow-lg transition-all ${
+                connectionStatus === 'success'
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+                  : 'bg-rose-500/10 border-rose-500/30 text-rose-300'
+              }`}
+              title={connectionStatus === 'success' ? 'Hubitat Maker API Connected' : 'Hubitat Maker API Disconnected'}
+            >
+              <span className={`w-3 h-3 rounded-full ${
+                connectionStatus === 'success' ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.8)]' : 'bg-rose-400'
+              }`} />
+              <span>{connectionStatus === 'success' ? 'Hubitat Online' : 'Hubitat Offline'}</span>
+            </div>
+
             <button
               className="p-4 bg-slate-900/60 border border-white/10 rounded-2xl text-slate-300 hover:text-white hover:bg-slate-800 transition-all shadow-lg active:scale-95"
               title="Notifications"
             >
               <Bell size={26} />
             </button>
-            <div
-              className="h-14 w-14 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 border-2 border-white/20 shadow-xl flex items-center justify-center cursor-pointer"
-              title="System Profile & Updates"
-              onClick={() => setActiveTab('updates')}
-            >
-              <GitBranch size={24} className="text-white" />
-            </div>
           </div>
         </header>
 
         {/* Tab Views */}
         {activeTab === 'cameras' && <CameraViewer onNavigateToGallery={() => setActiveTab('gallery')} />}
         {activeTab === 'gallery' && <GalleryViewer />}
-        {activeTab === 'updates' && <VersionManager />}
 
         {activeTab === 'dashboard' && (
           <div className="p-8 bg-slate-900/60 border border-white/10 rounded-3xl text-center">
             <h3 className="text-2xl font-bold text-white mb-2">Dashboard</h3>
-            <p className="text-slate-400">Overview metrics and shortcuts</p>
+            <p className="text-slate-400">Overview metrics, automation triggers, and room status</p>
           </div>
         )}
 
-        {activeTab === 'home' && (
-          <div className="p-8 bg-slate-900/60 border border-white/10 rounded-3xl text-center">
-            <h3 className="text-2xl font-bold text-white mb-2">Home Rooms</h3>
-            <p className="text-slate-400">Room management and zones</p>
-          </div>
-        )}
+        {/* Home Rooms Grid Creator */}
+        {activeTab === 'home' && <RoomGridCreator />}
 
+        {/* Connected Devices & Driver Synchronizer */}
         {activeTab === 'devices' && (
-          <div className="flex flex-col gap-6">
-            <div className="flex gap-4 border-b border-white/10 pb-3">
-              <button
-                className="text-white font-bold border-b-4 border-indigo-500 px-6 py-3 text-xl hover:bg-white/5 transition-all"
-                title="View added devices"
-              >
-                Added Devices
-              </button>
-            </div>
-          </div>
+          <DeviceManager onNavigateToSettings={() => setActiveTab('settings')} />
         )}
 
+        {/* Settings Tab - Includes Version Manager & System Configs */}
         {activeTab === 'settings' && (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-            <div className="glass-card p-8 rounded-3xl border border-white/10">
+          <div className="flex flex-col gap-10">
+            <VersionManager />
+
+            <div className="glass-card p-8 rounded-3xl border border-white/10 shadow-xl">
               <div className="flex justify-between items-center mb-6">
-                <h3 className="text-2xl font-bold text-white">Hubitat Connection</h3>
+                <div>
+                  <h3 className="text-2xl font-bold text-white">Hubitat Connection</h3>
+                  <p className="text-slate-400 text-sm mt-1">Configure Maker API and Hub Admin credentials</p>
+                </div>
                 {!isEditing && connectionStatus === 'success' && (
                   <button
                     onClick={() => setIsEditing(true)}
@@ -146,7 +200,7 @@ const App = () => {
               <div className="space-y-5">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                   <div>
-                    <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-widest">Hub IP</label>
+                    <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-widest">Hub IP Address</label>
                     <input
                       disabled={!isEditing}
                       className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-lg focus:outline-none focus:border-indigo-500 disabled:opacity-50 transition-all font-mono"
@@ -156,7 +210,7 @@ const App = () => {
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-widest">App ID</label>
+                    <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-widest">Maker App ID</label>
                     <input
                       disabled={!isEditing}
                       className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-lg focus:outline-none focus:border-indigo-500 disabled:opacity-50 transition-all font-mono"
@@ -166,17 +220,49 @@ const App = () => {
                     />
                   </div>
                 </div>
+
                 <div>
-                  <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-widest">Access Token</label>
+                  <label className="block text-slate-400 text-sm font-bold mb-2 uppercase tracking-widest">Maker API Access Token</label>
                   <input
                     type="password"
                     disabled={!isEditing}
                     className="w-full bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white text-lg focus:outline-none focus:border-indigo-500 disabled:opacity-50 transition-all font-mono"
                     value={hubConfig.token}
                     onChange={(e) => setHubConfig({ ...hubConfig, token: e.target.value })}
-                    placeholder="Enter token from Maker API"
+                    placeholder="Enter Maker API token"
                   />
                 </div>
+
+                {/* Hub Administrative Credentials (Optional for local pairing & driver upload) */}
+                <div className="pt-2 border-t border-white/10">
+                  <span className="text-xs font-bold text-indigo-400 uppercase tracking-wider block mb-3">
+                    Hubitat Admin Access (Optional - for local pairing & driver uploads)
+                  </span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-slate-400 text-xs font-bold mb-1.5 uppercase">Hub Admin Username</label>
+                      <input
+                        disabled={!isEditing}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-base focus:outline-none focus:border-indigo-500 disabled:opacity-50 font-mono"
+                        value={hubConfig.hubUsername}
+                        onChange={(e) => setHubConfig({ ...hubConfig, hubUsername: e.target.value })}
+                        placeholder="admin email/user"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 text-xs font-bold mb-1.5 uppercase">Hub Admin Password</label>
+                      <input
+                        type="password"
+                        disabled={!isEditing}
+                        className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-base focus:outline-none focus:border-indigo-500 disabled:opacity-50 font-mono"
+                        value={hubConfig.hubPassword}
+                        onChange={(e) => setHubConfig({ ...hubConfig, hubPassword: e.target.value })}
+                        placeholder="hub password"
+                      />
+                    </div>
+                  </div>
+                </div>
+
                 <button
                   onClick={async () => {
                     setConnectionStatus('loading');
@@ -190,6 +276,7 @@ const App = () => {
                       if (data.success) {
                         setConnectionStatus('success');
                         setIsEditing(false);
+                        alert(`Connection Successful! ${data.deviceCount !== undefined ? `${data.deviceCount} devices found.` : ''}`);
                       } else {
                         setConnectionStatus('error');
                         alert(data.error || 'Connection Failed');
@@ -205,14 +292,15 @@ const App = () => {
                       : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xl shadow-indigo-600/25'
                   }`}
                   disabled={connectionStatus === 'loading'}
-                  title="Verify Hubitat Connection"
+                  title="Verify and Persist Hubitat Connection"
                 >
-                  {connectionStatus === 'loading' ? 'Verifying...' : connectionStatus === 'success' && !isEditing ? 'Connected' : 'Verify Connection'}
+                  {connectionStatus === 'loading' ? 'Verifying...' : connectionStatus === 'success' && !isEditing ? 'Connected & Persisted' : 'Verify & Save Connection'}
                 </button>
               </div>
             </div>
 
-            <div className="glass-card p-8 rounded-3xl border border-white/10">
+            {/* Configuration Persistence Card */}
+            <div className="glass-card p-8 rounded-3xl border border-white/10 shadow-xl">
               <h3 className="text-2xl font-bold text-white mb-6">Configuration Persistence</h3>
               <div className="space-y-5">
                 <div>
@@ -271,7 +359,7 @@ const App = () => {
                             if (data.success) {
                               alert('Configuration imported successfully!');
                               if (data.hubHint) {
-                                setHubConfig({ ip: data.hubHint.ip, appId: data.hubHint.appId, token: data.hubHint.token });
+                                setHubConfig({ ip: data.hubHint.ip, appId: data.hubHint.appId, token: data.hubHint.token, hubUsername: '', hubPassword: '' });
                                 setConnectionStatus('success');
                                 setIsEditing(false);
                               }

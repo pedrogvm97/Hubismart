@@ -125,7 +125,7 @@ const VersionManager = () => {
           <div>
             <div className="flex items-center gap-4">
               <h2 className="text-3xl font-extrabold text-white tracking-wide">
-                Hubismart Version Manager
+                Homearr Version & Updates
               </h2>
               <span className="px-4 py-1.5 bg-indigo-600/30 text-indigo-300 font-mono font-bold text-xl rounded-xl border border-indigo-500/30">
                 {versionData?.currentVersion || 'v1.0.3'}
@@ -393,7 +393,7 @@ const VersionManager = () => {
             {!actionProgress ? (
               <div className="space-y-4">
                 <p className="text-slate-300 text-xl leading-relaxed">
-                  Are you sure you want to {actionModal.type === 'upgrade' ? 'update' : 'roll back (downgrade)'} Hubismart to version <strong className="text-white font-mono">{actionModal.tag}</strong>?
+                  Are you sure you want to {actionModal.type === 'upgrade' ? 'update' : 'roll back (downgrade)'} Homearr to version <strong className="text-white font-mono">{actionModal.tag}</strong>?
                 </p>
                 <div className="p-5 bg-white/5 border border-white/10 rounded-2xl text-base text-slate-400 space-y-2">
                   <p>• The container image will be pulled from GitHub Container Registry.</p>

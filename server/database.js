@@ -55,6 +55,32 @@ async function setupDatabase() {
     )
   `);
 
+    // Hubitat configuration persistence
+    await db.exec(`
+    CREATE TABLE IF NOT EXISTS hubitat_config (
+      id INTEGER PRIMARY KEY CHECK (id = 1),
+      ip TEXT,
+      app_id TEXT,
+      access_token TEXT,
+      hub_username TEXT,
+      hub_password TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+    // Device metadata (custom name, room assignment, driver code, automations)
+    await db.exec(`
+    CREATE TABLE IF NOT EXISTS device_metadata (
+      device_id TEXT PRIMARY KEY,
+      custom_name TEXT,
+      room_id INTEGER,
+      driver_code TEXT,
+      driver_name TEXT,
+      automations_json TEXT DEFAULT '[]',
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
     // Cameras table for EZVIZ & IP cameras
     await db.exec(`
     CREATE TABLE IF NOT EXISTS cameras (
@@ -83,6 +109,20 @@ async function setupDatabase() {
         await db.run("INSERT INTO groups (name, type) VALUES ('Living Room', 'room')");
         await db.run("INSERT INTO groups (name, type) VALUES ('Kitchen', 'room')");
         await db.run("INSERT INTO groups (name, type) VALUES ('Bedroom', 'room')");
+    }
+
+    // Default floor plan if none exist
+    const floorPlanCount = await db.get('SELECT COUNT(*) as count FROM floor_plans');
+    if (floorPlanCount.count === 0) {
+        const defaultRooms = [
+            { id: 'room-1', name: 'Living Room', type: 'living_room', x: 60, y: 60, width: 240, height: 200, rotation: 0, color: '#6366f1', doors: [{ id: 'door-1', wall: 'bottom', offset: 50 }] },
+            { id: 'room-2', name: 'Kitchen', type: 'kitchen', x: 330, y: 60, width: 200, height: 200, rotation: 0, color: '#10b981', doors: [{ id: 'door-2', wall: 'left', offset: 50 }] },
+            { id: 'room-3', name: 'Bedroom', type: 'bedroom', x: 60, y: 290, width: 240, height: 220, rotation: 0, color: '#ec4899', doors: [{ id: 'door-3', wall: 'top', offset: 50 }] }
+        ];
+        await db.run(
+            'INSERT INTO floor_plans (name, level, layout_json) VALUES (?, ?, ?)',
+            ['Main Level', 1, JSON.stringify(defaultRooms)]
+        );
     }
 
     // Remove any hub from cameras table

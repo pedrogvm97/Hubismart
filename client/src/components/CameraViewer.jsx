@@ -667,7 +667,7 @@ const CameraViewer = ({ onNavigateToGallery }) => {
                 <div>
                   <h4 className="font-bold text-white mb-1">One-Click Auto-Bind</h4>
                   <p className="text-slate-300">
-                    Once on your home network, click the <strong>Scan</strong> icon in Hubismart. The camera will be discovered automatically, and will bind with its verification code <strong className="font-mono text-emerald-400">C9OEMG</strong>.
+                    Once on your home network, click the <strong>Scan</strong> icon in Homearr. The camera will be discovered automatically, and will bind with its verification code <strong className="font-mono text-emerald-400">C9OEMG</strong>.
                   </p>
                 </div>
               </div>

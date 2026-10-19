@@ -29,6 +29,21 @@ const io = new Server(server, {
 // Database and Service Initialization
 (async () => {
     db = await setupDatabase();
+    try {
+        const savedConfig = await db.get('SELECT * FROM hubitat_config WHERE id = 1');
+        if (savedConfig && savedConfig.ip && savedConfig.access_token) {
+            hubitat = new HubitatClient({
+                ip: savedConfig.ip,
+                appId: savedConfig.app_id,
+                accessToken: savedConfig.access_token,
+                hubUsername: savedConfig.hub_username,
+                hubPassword: savedConfig.hub_password
+            });
+            console.log('Hubitat client initialized from database config');
+        }
+    } catch (err) {
+        console.warn('Could not load hubitat_config on startup:', err.message);
+    }
     cameraService = new CameraService(db, io);
     recorderService = new RecorderService(db, io, cameraService);
     updaterService = new UpdaterService(db, io);
@@ -60,19 +75,96 @@ app.get('/health', (req, res) => {
 // Device Routes
 app.get('/api/devices', async (req, res) => {
     try {
+        if (!hubitat || !hubitat.isConfigured()) {
+            return res.json({ devices: [], configured: false, message: 'Hubitat credentials not configured' });
+        }
         const devices = await hubitat.getDevices();
-        res.json(devices);
+
+        // Query custom metadata and room names from DB
+        const metadataMap = {};
+        const roomsMap = {};
+        if (db) {
+            try {
+                const metaRows = await db.all('SELECT * FROM device_metadata');
+                metaRows.forEach(r => { metadataMap[r.device_id] = r; });
+
+                const roomRows = await db.all("SELECT id, name FROM groups WHERE type = 'room'");
+                roomRows.forEach(rm => { roomsMap[rm.id] = rm.name; });
+            } catch (dbErr) {
+                console.warn('Error reading device_metadata:', dbErr.message);
+            }
+        }
+
+        const enrichedDevices = devices.map(d => {
+            const meta = metadataMap[d.id] || {};
+            let automations = [];
+            try {
+                automations = meta.automations_json ? JSON.parse(meta.automations_json) : [];
+            } catch (e) {}
+
+            return {
+                ...d,
+                customName: meta.custom_name || '',
+                roomId: meta.room_id || null,
+                roomName: meta.room_id && roomsMap[meta.room_id] ? roomsMap[meta.room_id] : (d.room || ''),
+                driverCode: meta.driver_code || '',
+                driverName: meta.driver_name || d.type || '',
+                automations
+            };
+        });
+
+        res.json({ devices: enrichedDevices, configured: true, count: enrichedDevices.length });
     } catch (error) {
-        res.status(500).json({ error: 'Failed to fetch devices' });
+        console.error('Error in GET /api/devices:', error.message);
+        res.status(200).json({ devices: [], configured: true, error: error.message });
     }
 });
 
 app.get('/api/devices/:id', async (req, res) => {
     try {
         const details = await hubitat.getDeviceDetails(req.params.id);
-        res.json(details);
+        let meta = null;
+        if (db) {
+            meta = await db.get('SELECT * FROM device_metadata WHERE device_id = ?', [req.params.id]);
+        }
+        let automations = [];
+        try {
+            if (meta?.automations_json) automations = JSON.parse(meta.automations_json);
+        } catch (e) {}
+
+        res.json({
+            ...details,
+            customName: meta?.custom_name || '',
+            roomId: meta?.room_id || null,
+            driverCode: meta?.driver_code || '',
+            driverName: meta?.driver_name || details.type || '',
+            automations
+        });
     } catch (error) {
         res.status(500).json({ error: 'Failed to fetch device details' });
+    }
+});
+
+app.put('/api/devices/:id/meta', async (req, res) => {
+    const { customName, roomId, driverCode, driverName, automations } = req.body;
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        const automationsJson = automations !== undefined ? JSON.stringify(automations) : '[]';
+        await db.run(`
+            INSERT INTO device_metadata (device_id, custom_name, room_id, driver_code, driver_name, automations_json, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+            ON CONFLICT(device_id) DO UPDATE SET
+                custom_name = COALESCE(excluded.custom_name, device_metadata.custom_name),
+                room_id = COALESCE(excluded.room_id, device_metadata.room_id),
+                driver_code = COALESCE(excluded.driver_code, device_metadata.driver_code),
+                driver_name = COALESCE(excluded.driver_name, device_metadata.driver_name),
+                automations_json = COALESCE(excluded.automations_json, device_metadata.automations_json),
+                updated_at = CURRENT_TIMESTAMP
+        `, [req.params.id, customName ?? null, roomId ?? null, driverCode ?? null, driverName ?? null, automationsJson]);
+
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
@@ -157,18 +249,211 @@ app.post('/events', async (req, res) => {
     res.status(200).send('Event received');
 });
 
-// Config Backup Routes
-const { encryptConfig, decryptConfig } = require('./cryptoUtils');
+// Hubitat Configuration & Verification
+app.get('/api/config/hubitat', async (req, res) => {
+    try {
+        let config = null;
+        if (db) {
+            config = await db.get('SELECT ip, app_id, access_token, hub_username FROM hubitat_config WHERE id = 1');
+        }
+        const ip = config?.ip || process.env.HUBITAT_IP || '';
+        const appId = config?.app_id || process.env.HUBITAT_APP_ID || '';
+        const token = config?.access_token || process.env.HUBITAT_ACCESS_TOKEN || '';
+        const hubUsername = config?.hub_username || '';
+
+        const isConfigured = !!(ip && appId && token);
+        res.json({
+            ip,
+            appId,
+            token,
+            hubUsername,
+            configured: isConfigured,
+            baseUrl: isConfigured ? `http://${ip}/apps/api/${appId}` : null
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
 app.post('/api/config/verify', async (req, res) => {
-    const { ip, appId, token } = req.body;
+    const { ip, appId, token, hubUsername, hubPassword } = req.body;
     const result = await HubitatClient.validateConnection({ ip, appId, token });
     if (result.success) {
         // Update live client
-        hubitat = new HubitatClient({ ip, appId, accessToken: token });
-        res.json({ success: true });
+        hubitat = new HubitatClient({
+            ip,
+            appId,
+            accessToken: token,
+            hubUsername,
+            hubPassword
+        });
+
+        // Persist credentials to SQLite database
+        if (db) {
+            try {
+                await db.run(`
+                    INSERT INTO hubitat_config (id, ip, app_id, access_token, hub_username, hub_password, updated_at)
+                    VALUES (1, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(id) DO UPDATE SET
+                        ip = excluded.ip,
+                        app_id = excluded.app_id,
+                        access_token = excluded.access_token,
+                        hub_username = COALESCE(excluded.hub_username, hubitat_config.hub_username),
+                        hub_password = COALESCE(excluded.hub_password, hubitat_config.hub_password),
+                        updated_at = CURRENT_TIMESTAMP
+                `, [ip, appId, token, hubUsername || '', hubPassword || '']);
+            } catch (dbErr) {
+                console.error('Failed to persist hubitat_config:', dbErr.message);
+            }
+        }
+
+        res.json({ success: true, deviceCount: result.deviceCount });
     } else {
         res.status(400).json({ error: result.error });
+    }
+});
+
+// Driver Management & Groovy Code Sync
+app.post('/api/hubitat/driver/sync', async (req, res) => {
+    const { deviceId, driverCode, driverName } = req.body;
+    try {
+        const validation = HubitatClient.validateGroovyDriver(driverCode);
+        if (!validation.valid) {
+            return res.status(400).json({
+                success: false,
+                error: 'Driver code validation failed',
+                details: validation.errors,
+                warnings: validation.warnings
+            });
+        }
+
+        // Save locally to device_metadata
+        if (db && deviceId) {
+            await db.run(`
+                INSERT INTO device_metadata (device_id, driver_code, driver_name, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT(device_id) DO UPDATE SET
+                    driver_code = excluded.driver_code,
+                    driver_name = excluded.driver_name,
+                    updated_at = CURRENT_TIMESTAMP
+            `, [deviceId, driverCode, driverName || 'Custom Driver']);
+        }
+
+        // Attempt hub firmware push if admin access is available
+        let hubSync = { success: false, note: 'Saved locally. Admin credentials required on hub for firmware installation.' };
+        if (hubitat && hubitat.isConfigured()) {
+            try {
+                hubSync = await hubitat.pushDriverToHub(driverCode, null, driverName);
+            } catch (pushErr) {
+                hubSync = { success: false, error: pushErr.message };
+            }
+        }
+
+        res.json({
+            success: true,
+            validation,
+            hubSync,
+            message: 'Driver validated and saved successfully'
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Zigbee & Z-Wave Pairing / Exclusion Endpoints
+app.post('/api/hubitat/pairing/start', async (req, res) => {
+    const { type = 'zigbee', seconds = 60 } = req.body;
+    try {
+        if (!hubitat) return res.status(503).json({ error: 'Hubitat client not initialized' });
+        let result;
+        if (type === 'zigbee') {
+            result = await hubitat.startZigbeePairing(seconds);
+        } else if (type === 'zwave_include') {
+            result = await hubitat.startZwaveInclusion();
+        } else if (type === 'zwave_exclude') {
+            result = await hubitat.startZwaveExclusion();
+        } else {
+            return res.status(400).json({ error: 'Invalid pairing type' });
+        }
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/hubitat/pairing/stop', async (req, res) => {
+    try {
+        if (!hubitat) return res.status(503).json({ error: 'Hubitat client not initialized' });
+        const result = await hubitat.stopZigbeePairing();
+        res.json(result);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Floor Plans & Rooms Routes
+app.get('/api/floorplans', async (req, res) => {
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        const plans = await db.all('SELECT * FROM floor_plans ORDER BY level ASC, id ASC');
+        res.json(plans);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/floorplans', async (req, res) => {
+    const { id, name = 'Floor Plan', level = 1, layout_json } = req.body;
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        let resultId = id;
+        const layoutStr = typeof layout_json === 'string' ? layout_json : JSON.stringify(layout_json);
+        if (id) {
+            await db.run(
+                'UPDATE floor_plans SET name = ?, level = ?, layout_json = ? WHERE id = ?',
+                [name, level, layoutStr, id]
+            );
+        } else {
+            const ins = await db.run(
+                'INSERT INTO floor_plans (name, level, layout_json) VALUES (?, ?, ?)',
+                [name, level, layoutStr]
+            );
+            resultId = ins.lastID;
+        }
+        res.json({ success: true, id: resultId });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.get('/api/rooms', async (req, res) => {
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        const rooms = await db.all("SELECT * FROM groups WHERE type = 'room' ORDER BY name ASC");
+        res.json(rooms);
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.post('/api/rooms', async (req, res) => {
+    const { name, description } = req.body;
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        const result = await db.run("INSERT INTO groups (name, type, description) VALUES (?, 'room', ?)", [name, description || '']);
+        res.json({ id: result.lastID, name });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+app.delete('/api/rooms/:id', async (req, res) => {
+    try {
+        if (!db) return res.status(503).json({ error: 'Database initializing' });
+        await db.run('DELETE FROM groups WHERE id = ?', [req.params.id]);
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
     }
 });
 
