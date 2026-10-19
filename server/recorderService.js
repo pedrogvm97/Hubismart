@@ -11,8 +11,18 @@ class RecorderService {
         this.watchers = new Map(); // cameraId -> watcher/interval
         this.prunerInterval = null;
         this.watchdogInterval = null;
+        this.hardCapInterval = null;
         this.ffmpegBin = this.cameraService ? this.cameraService.ffmpegPath : 'ffmpeg';
         this.storageDir = this.resolveStorageDir();
+
+        // Concurrency and rate limiting controls
+        this.indexingInProgress = new Set();
+        this.failedFiles = new Set();
+        this.indexingQueue = [];
+        this.isProcessingQueue = false;
+        this.cameraRetryState = new Map(); // cameraId -> { nextRetryAt, backoffMs }
+        this.cachedDiskUsage = null;
+        this.lastDiskUsageCalc = 0;
 
         this.log('Init', `RecorderService initialized. Storage directory: ${this.storageDir}`);
         this.ensureDir(this.storageDir);
@@ -126,17 +136,17 @@ class RecorderService {
             this.syncRecorders();
         }, 30000);
 
-        // Retention checker runs every 30 seconds
+        // Retention checker runs every 60 seconds
         this.prunerInterval = setInterval(() => {
             this.runPruner();
-        }, 30000);
+        }, 60000);
 
-        // Absolute Hard Disk Cap checker runs every 10 seconds
+        // Absolute Hard Disk Cap checker runs every 60 seconds
         this.hardCapInterval = setInterval(() => {
             this.enforceHardDiskCap();
-        }, 10000);
+        }, 60000);
 
-        setTimeout(() => this.runPruner(), 3000);
+        setTimeout(() => this.runPruner(), 5000);
     }
 
     async syncRecorders() {
@@ -144,23 +154,30 @@ class RecorderService {
         if (!settings.auto_record) return;
 
         try {
-            // Find valid cameras that have IP and verification code (strictly exclude hub)
+            // Find valid cameras that have IP and verification code (strictly exclude hub and awaiting_reset)
             const cameras = await this.db.all(`
                 SELECT * FROM cameras 
                 WHERE is_hub = 0 
+                  AND (status IS NULL OR status != 'awaiting_reset')
                   AND ip IS NOT NULL 
                   AND ip != '' 
                   AND verification_code IS NOT NULL 
                   AND verification_code != ''
             `);
 
+            const now = Date.now();
             for (const camera of cameras) {
+                const retry = this.cameraRetryState.get(camera.id);
+                if (retry && now < retry.nextRetryAt) {
+                    continue; // Skip camera while backing off
+                }
+
                 if (!this.activeRecorders.has(camera.id)) {
                     this.startCameraRecorder(camera);
                 }
             }
 
-            // Stop recorders for cameras that were deleted or had IP/code removed
+            // Stop recorders for cameras that were deleted, reset, or had IP/code removed
             for (const [camId, rec] of this.activeRecorders.entries()) {
                 const stillExists = cameras.find(c => c.id === camId);
                 if (!stillExists) {
@@ -238,11 +255,26 @@ class RecorderService {
         });
 
         proc.on('close', (code) => {
-            this.log('Process', `Recorder process for ${camera.name} exited with code ${code}`);
+            const lifespan = Date.now() - recorderState.startedAt;
+            this.log('Process', `Recorder process for ${camera.name} exited with code ${code} after ${(lifespan / 1000).toFixed(1)}s`);
             this.activeRecorders.delete(camera.id);
             if (this.watchers.has(camera.id)) {
                 clearInterval(this.watchers.get(camera.id));
                 this.watchers.delete(camera.id);
+            }
+
+            // Exponential backoff if camera connection fails immediately (< 20 seconds)
+            if (lifespan < 20000) {
+                const prev = this.cameraRetryState.get(camera.id) || { backoffMs: 15000 };
+                const newBackoff = Math.min(300000, Math.max(30000, prev.backoffMs * 2));
+                this.cameraRetryState.set(camera.id, {
+                    nextRetryAt: Date.now() + newBackoff,
+                    backoffMs: newBackoff
+                });
+                this.log('Watchdog', `Camera ${camera.name} disconnected early. Next retry in ${(newBackoff / 1000).toFixed(0)}s`);
+            } else {
+                // If it ran stably, reset backoff
+                this.cameraRetryState.delete(camera.id);
             }
         });
 
@@ -251,10 +283,10 @@ class RecorderService {
             this.activeRecorders.delete(camera.id);
         });
 
-        // Set up directory watcher to index completed MP4 segments
+        // Set up directory watcher to check completed MP4 segments every 15s
         const pollInterval = setInterval(() => {
             this.checkCompletedSegments(camera.id);
-        }, 10000);
+        }, 15000);
         this.watchers.set(camera.id, pollInterval);
     }
 
@@ -287,6 +319,7 @@ class RecorderService {
 
         try {
             const camDir = state.dir;
+            if (!fs.existsSync(camDir)) return;
             const files = fs.readdirSync(camDir).filter(f => f.endsWith('.mp4')).sort();
 
             // All files except the latest one currently being written are completed
@@ -297,15 +330,45 @@ class RecorderService {
             for (const filename of completed) {
                 const fullPath = path.join(camDir, filename);
 
+                // Prevent duplicate indexing if already queued, in progress, or known broken
+                if (this.indexingInProgress.has(fullPath) || this.failedFiles.has(fullPath)) {
+                    continue;
+                }
+
                 // Check if already registered in database
                 const existing = await this.db.get('SELECT id FROM recordings WHERE filepath = ?', [fullPath]);
                 if (existing) continue;
 
-                // Index this completed segment
-                await this.indexSegment(state.camera, fullPath, filename);
+                // Lock immediately to prevent re-enqueueing by subsequent intervals
+                this.indexingInProgress.add(fullPath);
+                this.indexingQueue.push({ camera: state.camera, filePath: fullPath, filename });
             }
+
+            // Process queue sequentially
+            this.processIndexingQueue();
         } catch (err) {
             this.log('Indexer', `Error checking completed segments for camera ${cameraId}: ${err.message}`);
+        }
+    }
+
+    async processIndexingQueue() {
+        if (this.isProcessingQueue) return;
+        this.isProcessingQueue = true;
+
+        try {
+            while (this.indexingQueue.length > 0) {
+                const job = this.indexingQueue.shift();
+                try {
+                    await this.indexSegment(job.camera, job.filePath, job.filename);
+                } catch (err) {
+                    this.log('Indexer', `Queue processing error on ${job.filename}: ${err.message}`);
+                    this.failedFiles.add(job.filePath);
+                } finally {
+                    this.indexingInProgress.delete(job.filePath);
+                }
+            }
+        } finally {
+            this.isProcessingQueue = false;
         }
     }
 
@@ -322,9 +385,20 @@ class RecorderService {
 
     async indexSegment(camera, filePath, filename) {
         try {
+            if (!fs.existsSync(filePath)) {
+                this.failedFiles.add(filePath);
+                return;
+            }
+
             const stats = fs.statSync(filePath);
             if (stats.size < 50000) {
                 // Ignore empty or corrupt tiny files (< 50KB)
+                // If older than 2 minutes, unlink corrupted stub to clean up disk
+                if (Date.now() - stats.mtimeMs > 120000) {
+                    try { fs.unlinkSync(filePath); } catch (e) { }
+                    this.log('Indexer', `Removed corrupted fragment ${filename}`);
+                }
+                this.failedFiles.add(filePath);
                 return;
             }
 
@@ -332,22 +406,30 @@ class RecorderService {
             let durationSeconds = 7200; // 2 hours default
             try {
                 const probeCmd = `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`;
-                const stdout = require('child_process').execSync(probeCmd, { encoding: 'utf8', timeout: 5000 });
+                const stdout = execSync(probeCmd, { encoding: 'utf8', timeout: 5000 });
                 const parsed = parseFloat(stdout.trim());
                 if (!isNaN(parsed) && parsed > 0) {
                     durationSeconds = Math.round(parsed);
                 }
-            } catch (e) { }
+            } catch (e) {
+                this.log('Indexer', `ffprobe warning on ${filename}: ${e.message}`);
+            }
             const endTime = new Date(startTime.getTime() + durationSeconds * 1000);
 
-            // Generate thumbnail
+            // Generate thumbnail using single thread
             const thumbFilename = filename.replace('.mp4', '_thumb.jpg');
             const thumbPath = path.join(path.dirname(filePath), thumbFilename);
 
             await this.generateThumbnail(filePath, thumbPath);
 
-            // Analyze motion / events
-            const motionResult = await this.analyzeMotion(filePath);
+            // Analyze motion / events using single-threaded checkpoint sampling
+            const motionResult = await this.analyzeMotion(filePath, durationSeconds);
+
+            // Atomic idempotency check right before insert
+            const existing = await this.db.get('SELECT id FROM recordings WHERE filepath = ?', [filePath]);
+            if (existing) {
+                return;
+            }
 
             const result = await this.db.run(`
                 INSERT INTO recordings (
@@ -370,6 +452,8 @@ class RecorderService {
                 0
             ]);
 
+            this.cachedDiskUsage = null; // Invalidate cache
+
             const newRecord = await this.db.get('SELECT * FROM recordings WHERE id = ?', [result.lastID]);
             this.log('Indexer', `Indexed segment ${filename} (${(stats.size / (1024 * 1024)).toFixed(1)}MB, duration: ${durationSeconds}s, motion: ${motionResult.motionType})`);
 
@@ -377,6 +461,7 @@ class RecorderService {
                 this.io.emit('new_recording', newRecord);
             }
         } catch (err) {
+            this.failedFiles.add(filePath);
             this.log('Indexer', `Failed to index segment ${filename}: ${err.message}`);
         }
     }
@@ -385,6 +470,7 @@ class RecorderService {
         return new Promise((resolve) => {
             const args = [
                 '-y',
+                '-threads', '1',
                 '-ss', '00:00:15',
                 '-i', videoPath,
                 '-vframes', '1',
@@ -399,7 +485,7 @@ class RecorderService {
                     resolve(true);
                 } else {
                     // Fallback to frame 0
-                    const fallbackArgs = ['-y', '-i', videoPath, '-vframes', '1', '-q:v', '3', thumbPath];
+                    const fallbackArgs = ['-y', '-threads', '1', '-i', videoPath, '-vframes', '1', '-q:v', '3', thumbPath];
                     const proc2 = spawn(this.ffmpegBin, fallbackArgs);
                     proc2.on('close', () => resolve(fs.existsSync(thumbPath)));
                 }
@@ -408,40 +494,59 @@ class RecorderService {
         });
     }
 
-    async analyzeMotion(videoPath) {
-        // Fast motion activity detection using FFmpeg scene change filter at 1 frame per second
+    async analyzeMotion(videoPath, durationSeconds = 7200) {
+        // Fast, ultra-low CPU motion activity detection using 1 thread and sampled checkpoints
         return new Promise((resolve) => {
-            const args = [
-                '-nostdin',
-                '-i', videoPath,
-                '-vf', "fps=1,select='gt(scene,0.025)',metadata=print:file=-",
-                '-f', 'null',
-                '-'
-            ];
+            let sampleArgs = [];
+            const dur = Math.max(10, durationSeconds || 7200);
 
-            const proc = spawn(this.ffmpegBin, args);
+            if (dur <= 60) {
+                // Short clip: analyze entire clip with 1 thread
+                sampleArgs = [
+                    '-threads', '1',
+                    '-nostdin',
+                    '-i', videoPath,
+                    '-vf', "fps=1,select='gt(scene,0.025)',metadata=print:file=-",
+                    '-f', 'null',
+                    '-'
+                ];
+            } else {
+                // For long segments (e.g. 2 hours), sample 15 seconds starting 30s in
+                // Fast keyframe seek before -i ensures instant startup with near 0% CPU
+                const seekOffset = Math.min(30, Math.floor(dur * 0.1));
+                sampleArgs = [
+                    '-threads', '1',
+                    '-nostdin',
+                    '-ss', String(seekOffset),
+                    '-t', '15',
+                    '-i', videoPath,
+                    '-vf', "fps=1,select='gt(scene,0.025)',metadata=print:file=-",
+                    '-f', 'null',
+                    '-'
+                ];
+            }
+
+            const proc = spawn(this.ffmpegBin, sampleArgs);
             let output = '';
             proc.stdout.on('data', (d) => { output += d.toString(); });
             proc.stderr.on('data', (d) => { output += d.toString(); });
 
             proc.on('close', () => {
-                // Count scene change detections in metadata
                 const matches = output.match(/lavfi\.scene_score=([\d.]+)/g) || [];
-                const hasMotion = matches.length >= 2;
+                const hasMotion = matches.length >= 1;
 
                 let motionType = 'none';
                 let detectedPersons = [];
 
                 if (hasMotion) {
-                    // If high scene activity is detected, evaluate human/animal heuristic tags
                     const highActivity = matches.some(m => {
                         const val = parseFloat(m.split('=')[1]);
                         return val > 0.08;
                     });
 
-                    if (highActivity && matches.length >= 5) {
+                    if (highActivity && matches.length >= 3) {
                         motionType = 'human';
-                    } else if (matches.length >= 3) {
+                    } else if (matches.length >= 2) {
                         motionType = 'animal';
                     } else {
                         motionType = 'motion';
@@ -507,8 +612,12 @@ class RecorderService {
         }
     }
 
-    // Measure exact physical byte size of all files on disk in storageDir
+    // Measure exact physical byte size of all files on disk in storageDir (cached with 30s TTL)
     getActualDiskUsage(dir = this.storageDir) {
+        if (dir === this.storageDir && this.cachedDiskUsage !== null && (Date.now() - this.lastDiskUsageCalc < 30000)) {
+            return this.cachedDiskUsage;
+        }
+
         let total = 0;
         try {
             if (!fs.existsSync(dir)) return 0;
@@ -524,6 +633,11 @@ class RecorderService {
                 }
             }
         } catch (e) { }
+
+        if (dir === this.storageDir) {
+            this.cachedDiskUsage = total;
+            this.lastDiskUsageCalc = Date.now();
+        }
         return total;
     }
 
@@ -532,6 +646,8 @@ class RecorderService {
         try {
             const settings = await this.getSettings();
             const maxAllowedBytes = (parseFloat(settings.max_storage_gb) || 200.0) * 1024 * 1024 * 1024;
+            // Force fresh calculation on hard cap check
+            this.cachedDiskUsage = null;
             let actualBytes = this.getActualDiskUsage();
 
             if (actualBytes > maxAllowedBytes) {
@@ -546,6 +662,7 @@ class RecorderService {
 
                     this.deleteRecordingFiles(rec);
                     await this.db.run('DELETE FROM recordings WHERE id = ?', [rec.id]);
+                    this.cachedDiskUsage = null;
                     actualBytes = this.getActualDiskUsage();
                     this.log('HardCap', `Evicted oldest recording ${rec.filename}. Current usage: ${(actualBytes / (1024 * 1024 * 1024)).toFixed(3)} GB`);
                 }
@@ -582,6 +699,7 @@ class RecorderService {
             collectFiles(this.storageDir);
             allFiles.sort((a, b) => a.mtime - b.mtime); // Oldest modified first
 
+            this.cachedDiskUsage = null;
             let currentBytes = this.getActualDiskUsage();
             for (const file of allFiles) {
                 if (currentBytes <= maxAllowedBytes) break;
@@ -591,6 +709,7 @@ class RecorderService {
                     this.log('HardCap', `Unlinked orphaned file ${path.basename(file.path)} (${(file.size / 1024).toFixed(0)} KB)`);
                 } catch (e) { }
             }
+            this.cachedDiskUsage = currentBytes;
         } catch (e) { }
     }
 
@@ -602,6 +721,7 @@ class RecorderService {
             if (recording.thumbnail_path && fs.existsSync(recording.thumbnail_path)) {
                 fs.unlinkSync(recording.thumbnail_path);
             }
+            this.cachedDiskUsage = null;
         } catch (e) { }
     }
 

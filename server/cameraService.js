@@ -263,8 +263,9 @@ class CameraService {
             'Pragma': 'no-cache'
         });
 
-        // Use mpjpeg muxer with standard boundary tag
+        // Use mpjpeg muxer with standard boundary tag and single-thread decoding
         const args = [
+            '-threads', '1',
             '-rtsp_transport', 'tcp',
             '-i', rtspUrl,
             '-f', 'mpjpeg',
