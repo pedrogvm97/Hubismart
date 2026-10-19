@@ -1,6 +1,6 @@
 {
-  "name": "server",
-  "version": "1.0.11",
+  "name": "homearr-server",
+  "version": "1.0.13",
   "description": "",
   "main": "index.js",
   "scripts": {
